@@ -109,6 +109,7 @@ struct MCPServer: Codable, Identifiable, Equatable {
     private func rpc(_ method: String, _ params: [String: Any]) async throws -> [String: Any] {
         let id = UUID().uuidString; let request = try request(method: method, params: params, id: id)
         let (bytes, response) = try await session.bytes(for: request)
+        defer { bytes.task.cancel() }
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw AppFailure.message("MCP 请求失败。请检查端点、授权或重新连接；不会自动重放可能产生副作用的调用。")
         }
@@ -134,7 +135,7 @@ struct MCPServer: Codable, Identifiable, Equatable {
     func connect() async throws {
         if initialized { return }
         let result = try await rpc("initialize", ["protocolVersion": version, "capabilities": [:],
-            "clientInfo": ["name": "OpenChat iOS", "version": "2.0.0"]])
+            "clientInfo": ["name": "OpenChat iOS", "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.0.2"]])
         guard let negotiated = result["protocolVersion"] as? String,
               ["2025-03-26", "2025-06-18", "2025-11-25"].contains(negotiated) else {
             throw AppFailure.message("MCP 服务协商的协议版本暂不支持。")
@@ -166,10 +167,10 @@ struct MCPServer: Codable, Identifiable, Equatable {
         return try await rpc("tools/call", ["name": name, "arguments": arguments])
     }
     func disconnect() async {
+        defer { self.sessionID = nil; initialized = false }
         guard let sessionID = sessionID, var request = try? request(method: "", params: [:]) else { return }
         request.httpMethod = "DELETE"; request.httpBody = nil
         request.setValue(sessionID, forHTTPHeaderField: "Mcp-Session-Id")
         _ = try? await BoundedHTTP.read(request, limit: 4096, using: session)
-        self.sessionID = nil; initialized = false
     }
 }

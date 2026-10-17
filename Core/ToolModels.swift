@@ -34,7 +34,7 @@ enum JSONValue: Codable, Equatable {
     }
 }
 
-struct ChatAttachment: Codable, Identifiable, Equatable {
+struct ChatAttachment: Codable, Identifiable, Equatable, Sendable {
     var id = UUID()
     var name: String
     var storedName: String

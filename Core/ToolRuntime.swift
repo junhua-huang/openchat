@@ -47,6 +47,7 @@ private struct Arithmetic {
     private var clients: [UUID: MCPClient] = [:]
     private let searchClient: WebSearchClient
     private var searchEnabled = false
+    var collectedArtifactIDs: Set<String> = []
     init(vault: FileVault, files: [ChatAttachment], servers: [MCPServer],
          approve: @escaping (String, String) async throws -> Bool, event: @escaping (ToolEvent) -> Void,
          searchClient: WebSearchClient = WebSearchClient()) {
@@ -94,7 +95,7 @@ private struct Arithmetic {
         return tools
     }
     func close() async { for client in clients.values { await client.disconnect() } }
-    static func saveResource(_ resource: [String: Any], vault: FileVault) throws -> ChatAttachment? {
+    nonisolated static func saveResource(_ resource: [String: Any], vault: FileVault) throws -> ChatAttachment? {
         let mime = resource["mimeType"] as? String ?? "application/octet-stream"
         let ext = UTType(mimeType: mime)?.preferredFilenameExtension ?? "bin"
         if let encoded = resource["blob"] as? String {
@@ -147,22 +148,39 @@ private struct Arithmetic {
                     guard let file = files.first(where: { $0.id.uuidString == id }) else { throw AppFailure.message("要打包的附件不在当前对话内。") }; return file
                 }
                 guard selected.reduce(0, { $0 + $1.byteCount }) <= 10_000_000 else { throw AppFailure.message("打包内容超过 10 MB。") }
-                var used = Set<String>()
-                let entries = try selected.enumerated().map { index, file -> (String, Data) in
-                    let entryName = used.insert(file.name).inserted ? file.name : "\(index + 1)-" + file.name
-                    return (entryName, try vault.data(file))
-                }
-                let data = try DocumentArchive.make(entries); try Task.checkCancellation()
                 let stem = URL(fileURLWithPath: FileVault.safeName(name)).deletingPathExtension().lastPathComponent
-                let file = try vault.save(data: data, name: stem + ".zip", text: try FileFormats.extract(data, ext: "zip"))
+                let vault = self.vault
+                let file = try await FileWork.run {
+                    var used = Set<String>()
+                    let entries = try selected.map { file -> (String, Data) in
+                        try Task.checkCancellation()
+                        var entryName = file.name; var index = 2
+                        while used.contains(entryName) { entryName = FileVault.safeName("\(index)-" + file.name); index += 1 }
+                        used.insert(entryName)
+                        return (entryName, try vault.data(file))
+                    }
+                    let data = try DocumentArchive.make(entries)
+                    return try FileWork.save(data, name: stem + ".zip", vault: vault, requireExtraction: true)
+                }
+                if Task.isCancelled { vault.remove(file); throw CancellationError() }
                 files.append(file); event(.file(file)); output = "ZIP 已生成：\(file.name)，file_id=\(file.id.uuidString)。请点击附件卡片保存。"
             case "create_file":
                 guard let name = args["name"] as? String, let format = args["format"] as? String, let content = args["content"] as? String,
                       ["txt","md","csv","json","html","svg","pdf","docx","xlsx","zip"].contains(format) else { throw AppFailure.message("文件参数无效。") }
                 let stem = URL(fileURLWithPath: FileVault.safeName(name)).deletingPathExtension().lastPathComponent
-                let data = try FileFormats.generate(format: format, content: content); try Task.checkCancellation()
-                let file = try vault.save(data: data, name: stem + "." + format,
-                    text: ["pdf","docx","xlsx","zip"].contains(format) ? try FileFormats.extract(data, ext: format) : content)
+                let vault = self.vault; let file: ChatAttachment
+                if format == "pdf" {
+                    // Native UIKit PDF layout stays on its required actor.
+                    let data = try FileFormats.generate(format: format, content: content)
+                    file = try await FileWork.run { try FileWork.save(data, name: stem + ".pdf", vault: vault, requireExtraction: true) }
+                } else {
+                    file = try await FileWork.run {
+                        let data = try FileFormats.generatePortable(format: format, content: content)
+                        return try FileWork.save(data, name: stem + "." + format, vault: vault,
+                            extractedText: ["docx","xlsx","zip"].contains(format) ? nil : content, requireExtraction: true)
+                    }
+                }
+                if Task.isCancelled { vault.remove(file); throw CancellationError() }
                 files.append(file); event(.file(file)); output = "文件已创建并显示附件卡片：\(file.name)，file_id=\(file.id.uuidString)，\(file.byteCount) bytes。请让用户点击卡片预览或保存，无需虚构下载链接。"
             case "read_webpage":
                 guard let input = args["url"] as? String, let url = URL(string: input), url.scheme == "https",
@@ -189,15 +207,27 @@ private struct Arithmetic {
                 for content in result["content"] as? [[String: Any]] ?? [] {
                     if let text = content["text"] as? String { texts.append(String(text.prefix(30000))) }
                     if content["type"] as? String == "image", let encoded = content["data"] as? String,
-                       let mime = content["mimeType"] as? String, ["image/png","image/jpeg","image/webp"].contains(mime),
-                       let data = Data(base64Encoded: encoded) {
+                       let mime = content["mimeType"] as? String, ["image/png","image/jpeg","image/webp"].contains(mime) {
                         let ext = mime == "image/png" ? "png" : mime == "image/webp" ? "webp" : "jpg"
-                        let file = try vault.saveImage(data: data, name: "MCP-\(tool.name).\(ext)")
+                        let vault = self.vault; let name = "MCP-\(tool.name).\(ext)"
+                        let file = try await FileWork.run {
+                            guard let data = Data(base64Encoded: encoded) else { throw AppFailure.message("MCP 图片编码无效。") }
+                            return try vault.saveImage(data: data, name: name)
+                        }
+                        if Task.isCancelled { vault.remove(file); throw CancellationError() }
                         files.append(file); event(.file(file)); texts.append("附件已保存：\(file.name)，file_id=\(file.id.uuidString)")
                     }
                     if let resource = content["resource"] as? [String: Any] {
                         if let text = resource["text"] as? String { texts.append(String(text.prefix(30000))) }
-                        if let file = try Self.saveResource(resource, vault: vault) {
+                        let blob = resource["blob"] as? String; let text = resource["text"] as? String; let mime = resource["mimeType"] as? String
+                        let vault = self.vault
+                        let saved = try await FileWork.run {
+                            var value: [String: Any] = [:]
+                            if let blob = blob { value["blob"] = blob }; if let text = text { value["text"] = text }; if let mime = mime { value["mimeType"] = mime }
+                            return try Self.saveResource(value, vault: vault)
+                        }
+                        if let file = saved {
+                            if Task.isCancelled { vault.remove(file); throw CancellationError() }
                             files.append(file); event(.file(file)); texts.append("附件已保存：\(file.name)，file_id=\(file.id.uuidString)")
                         }
                     }

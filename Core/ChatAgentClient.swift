@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 struct ChatToolStream {
     private(set) var calls: [Int: ToolCall] = [:]
@@ -58,6 +59,11 @@ struct AgentEndpoint {
         for message in history {
             if message.status == .complete {
                 input.append(["role": message.role.rawValue, "content": try content(message, responses: responses, vault: vault)])
+            } else if message.role == .assistant, message.status != .streaming,
+                      !message.text.isEmpty || !(message.attachments ?? []).isEmpty {
+                var partial = message
+                partial.text = "[上一条助手回复已中断，以下仅为实际收到的部分内容与附件，并非完整回答。]\n" + message.text
+                input.append(["role": "assistant", "content": try content(partial, responses: responses, vault: vault)])
             }
             let images = (message.attachments ?? []).filter(\.isImage)
             if message.role == .assistant, !images.isEmpty {
@@ -110,27 +116,20 @@ struct AgentEndpoint {
         }
         return body
     }
-    static func responsesTurn(_ request: URLRequest, delta: (String) -> Void, activity: (ToolActivity) -> Void) async throws -> [[String: Any]] {
-        let (bytes, response) = try await BoundedHTTP.session.bytes(for: request)
+    static func responsesTurn(_ request: URLRequest, using session: URLSession = BoundedHTTP.session, delta: (String) -> Void, activity: @escaping (ToolActivity) -> Void) async throws -> [[String: Any]] {
+        let (bytes, response) = try await session.bytes(for: request)
+        defer { bytes.task.cancel() }
         guard let http = response as? HTTPURLResponse else { throw ResponseFailure.make(response: nil, shape: "non_http") }
         var decoder = ResponsesWireDecoder(response: http)
         for try await line in SSEByteLines(base: bytes) {
             try Task.checkCancellation()
-            // Side channel only for progress. The validated decoder owns framing/completion.
-            if line.hasPrefix("data:"), let data = String(line.dropFirst(5)).data(using: .utf8),
-               let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let type = event["type"] as? String {
-                for tool in ["web_search_call", "code_interpreter_call", "image_generation_call"] where type.hasPrefix("response." + tool + ".") {
-                    let id = event["item_id"] as? String ?? tool
-                    activity(ToolActivity(id: id, name: tool, state: type.hasSuffix("completed") ? "complete" : "running", detail: type.hasSuffix("completed") ? "已完成" : "正在执行"))
-                }
-            }
-            if try decoder.push(line, onDelta: delta) { return decoder.output }
+            if try decoder.push(line, onActivity: activity, onDelta: delta) { return decoder.output }
         }
-        _ = try decoder.finish(onDelta: delta); return decoder.output
+        _ = try decoder.finish(onActivity: activity, onDelta: delta); return decoder.output
     }
     static func chatTurn(_ request: URLRequest, delta: (String) -> Void) async throws -> [ToolCall] {
         let (bytes, response) = try await BoundedHTTP.session.bytes(for: request)
+        defer { bytes.task.cancel() }
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw AppFailure.message("API 请求失败，请检查模型是否支持当前协议和工具调用，以及服务商余额。")
         }
@@ -250,29 +249,45 @@ struct AgentEndpoint {
         }
         return ids
     }
-    static func collectFiles(_ output: [[String: Any]], endpoint: AgentEndpoint, runtime: ToolRuntime) async throws {
+    static func collectFiles(_ output: [[String: Any]], endpoint: AgentEndpoint, runtime: ToolRuntime,
+                             download: ((URLRequest) async throws -> Data)? = nil) async throws {
         guard endpoint.hostedTools else { return }
-        var seen = Set<String>()
         for item in output {
-            if item["type"] as? String == "image_generation_call", let base64 = item["result"] as? String,
-               let data = Data(base64Encoded: base64) {
+            if item["type"] as? String == "image_generation_call", let base64 = item["result"] as? String {
                 try Task.checkCancellation()
+                let key: String
+                if let id = item["id"] as? String, !id.isEmpty, id.count <= 256 { key = "image:" + id }
+                else { key = try await FileWork.run { "image:" + SHA256.hash(data: Data(base64.utf8)).map { String(format: "%02x", $0) }.joined() } }
+                if runtime.collectedArtifactIDs.contains(key) { continue }
                 let format = item["output_format"] as? String ?? "png"
                 let ext = ["png", "jpeg", "webp"].contains(format) ? format : "png"
-                let file = try runtime.vault.saveImage(data: data, name: "生成图片." + ext)
+                let vault = runtime.vault
+                let file = try await FileWork.run {
+                    guard let data = Data(base64Encoded: base64) else { throw AppFailure.message("图片生成返回了无效的图片编码。") }
+                    return try vault.saveImage(data: data, name: "生成图片." + ext)
+                }
+                if Task.isCancelled { vault.remove(file); throw CancellationError() }
+                runtime.collectedArtifactIDs.insert(key)
                 runtime.files.append(file); runtime.event(.file(file))
             }
             for part in item["content"] as? [[String: Any]] ?? [] {
                 for annotation in part["annotations"] as? [[String: Any]] ?? [] where annotation["type"] as? String == "container_file_citation" {
                     guard let container = annotation["container_id"] as? String, let id = annotation["file_id"] as? String,
                           let name = annotation["filename"] as? String, container.range(of: "^[A-Za-z0-9_-]+$", options: .regularExpression) != nil,
-                          id.range(of: "^[A-Za-z0-9_-]+$", options: .regularExpression) != nil, seen.insert(container + "/" + id).inserted else { continue }
+                          id.range(of: "^[A-Za-z0-9_-]+$", options: .regularExpression) != nil else { continue }
+                    let key = "container:" + container + "/" + id
+                    guard !runtime.collectedArtifactIDs.contains(key) else { continue }
                     guard let connection = endpoint.connection else { continue }
                     let request = try APIChatClient.request(connection: connection, path: "containers/\(container)/files/\(id)/content")
-                    let (data, _) = try await BoundedHTTP.read(request, limit: 10_000_000); try Task.checkCancellation()
+                    let data: Data
+                    if let download = download { data = try await download(request) }
+                    else { data = try await BoundedHTTP.read(request, limit: 10_000_000).0 }
+                    try Task.checkCancellation()
                     let safe = FileVault.safeName(URL(fileURLWithPath: name).lastPathComponent)
-                    let text = try? FileFormats.extract(data, ext: URL(fileURLWithPath: safe).pathExtension.lowercased())
-                    let file = try runtime.vault.save(data: data, name: safe, text: text)
+                    let vault = runtime.vault
+                    let file = try await FileWork.run { try FileWork.save(data, name: safe, vault: vault) }
+                    if Task.isCancelled { vault.remove(file); throw CancellationError() }
+                    runtime.collectedArtifactIDs.insert(key)
                     runtime.files.append(file); runtime.event(.file(file))
                 }
             }

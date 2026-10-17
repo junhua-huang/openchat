@@ -38,6 +38,7 @@ enum ResponsesClient {
                        onDelta: (String) -> Void) async throws {
         let request = try request(token: token, model: model, history: history, effort: effort)
         let (bytes, response) = try await HTTP.session.bytes(for: request)
+        defer { bytes.task.cancel() }
         guard let http = response as? HTTPURLResponse else {
             throw ResponseFailure.make(response: nil, shape: "non_http")
         }
@@ -63,7 +64,12 @@ enum ResponsesClient {
 
     @MainActor
     static func handle(_ payload: String, response: HTTPURLResponse? = nil, shape: String = "sse", onDelta: (String) -> Void) throws -> Bool {
-        if payload == "[DONE]" { return false }
+        guard let event = try parseEvent(payload, response: response) else { return false }
+        return try handleEvent(event, response: response, shape: shape, onDelta: onDelta)
+    }
+
+    static func parseEvent(_ payload: String, response: HTTPURLResponse?) throws -> [String: Any]? {
+        if payload == "[DONE]" { return nil }
         guard let data = payload.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data) else {
             throw ResponseFailure.make(response: response, shape: "invalid_event_json")
@@ -71,6 +77,11 @@ enum ResponsesClient {
         guard let event = object as? [String: Any] else {
             throw ResponseFailure.make(response: response, shape: "event_not_object")
         }
+        return event
+    }
+
+    @MainActor
+    static func handleEvent(_ event: [String: Any], response: HTTPURLResponse?, shape: String, onDelta: (String) -> Void) throws -> Bool {
         guard let type = event["type"] as? String, !type.isEmpty else {
             throw ResponseFailure.make(response: response,
                 shape: event["error"] != nil ? "event_error" : "event_missing_type", object: event)

@@ -31,6 +31,22 @@ private final class MCPMockProtocol: URLProtocol {
 }
 
 final class MCPTests: XCTestCase {
+    @MainActor func testDisconnectResetsStatelessClientBeforeReconnect() async throws {
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [MCPMockProtocol.self]
+        let session = URLSession(configuration: config)
+        defer { session.invalidateAndCancel(); MCPMockProtocol.handler = nil }
+        var initializations = 0
+        MCPMockProtocol.handler = { request in
+            let body = try JSONSerialization.jsonObject(with: MCPMockProtocol.body(request)) as! [String: Any]
+            if body["method"] as? String == "notifications/initialized" { return (202, [:], Data()) }
+            initializations += 1
+            let reply: [String: Any] = ["jsonrpc": "2.0", "id": body["id"]!, "result": ["protocolVersion": "2025-06-18"]]
+            return (200, ["Content-Type": "application/json"], try JSONSerialization.data(withJSONObject: reply))
+        }
+        let client = MCPClient(server: MCPServer(name: "Synthetic", endpoint: "https://synthetic.invalid/mcp"), session: session)
+        try await client.connect(); await client.disconnect(); try await client.connect()
+        XCTAssertEqual(initializations, 2)
+    }
     func testEndpointAndCredentialValidation() throws {
         for url in ["http://example.com/mcp", "https://user:password@example.com/mcp", "https://example.com/mcp?key=secret", "invalid"] {
             XCTAssertThrowsError(try MCPServer(name: "test", endpoint: url).validated())

@@ -114,7 +114,11 @@ struct MCPServerEditor: View {
             defer { busy = false; task = nil }
             do {
                 var server = try MCPServer(id: existing?.id ?? UUID(), name: name, endpoint: endpoint, token: token, enabled: enabled).validated()
-                if enabled { server.tools = try await MCPClient(server: server).listTools(); try Task.checkCancellation() }
+                if enabled {
+                    let client = MCPClient(server: server)
+                    defer { Task { await client.disconnect() } }
+                    server.tools = try await client.listTools(); try Task.checkCancellation()
+                }
                 else if existing?.endpoint == server.endpoint && existing?.token == server.token { server.tools = existing?.tools ?? [] }
                 try connections.save(server); dismiss()
             } catch is CancellationError { }

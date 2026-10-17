@@ -19,6 +19,7 @@ private final class OfficeXML: NSObject, XMLParserDelegate {
         if mode == "word", name == "br" { text += "\n" }
     }
     func parser(_ parser: XMLParser, foundCharacters string: String) {
+        if Task.isCancelled { parser.abortParsing(); return }
         guard capturing else { return }; size += string.utf8.count
         if size > 2_000_000 { parser.abortParsing(); return }
         if mode == "word" { text += string }
@@ -39,17 +40,23 @@ private final class OfficeXML: NSObject, XMLParserDelegate {
     }
     func parse(_ data: Data) throws {
         let parser = XMLParser(data: data); parser.shouldResolveExternalEntities = false; parser.delegate = self
-        guard parser.parse(), size <= 2_000_000, text.utf8.count <= 2_000_000 else { throw AppFailure.message("文档 XML 无效或提取的文字过多。") }
+        let parsed = parser.parse(); try Task.checkCancellation()
+        guard parsed, size <= 2_000_000, text.utf8.count <= 2_000_000 else { throw AppFailure.message("文档 XML 无效或提取的文字过多。") }
     }
 }
 
 enum FileFormats {
     static let textExtensions = Set(["txt","md","csv","tsv","json","xml","html","htm","css","js","ts","swift","py","c","cpp","h","java","yaml","yml","log","sql","svg"])
     static func extract(_ data: Data, ext: String) throws -> String {
+        try Task.checkCancellation()
         if ext == "pdf" {
             guard let pdf = PDFDocument(data: data), !pdf.isLocked, pdf.pageCount <= 200 else { throw AppFailure.message("PDF 无法读取、已加密或超过 200 页。") }
-            let text = (0..<pdf.pageCount).map { "\n[第 \($0 + 1) 页]\n" + (pdf.page(at: $0)?.string ?? "") }.joined()
-            guard text.utf8.count <= 2_000_000 else { throw AppFailure.message("PDF 文字过多，请拆分文件。") }
+            var text = ""
+            for index in 0..<pdf.pageCount {
+                try Task.checkCancellation()
+                text += "\n[第 \(index + 1) 页]\n" + (pdf.page(at: index)?.string ?? "")
+                guard text.utf8.count <= 2_000_000 else { throw AppFailure.message("PDF 文字过多，请拆分文件。") }
+            }
             return text
         }
         if ["docx", "xlsx", "zip"].contains(ext) {
@@ -66,6 +73,7 @@ enum FileFormats {
             guard !sheets.isEmpty, sheets.count <= 32 else { throw AppFailure.message("Excel 工作表为空或过多。") }
             var text = ""
             for sheet in sheets {
+                try Task.checkCancellation()
                 let reader = OfficeXML("sheet", shared: shared); try reader.parse(zip.content(sheet.name))
                 text += "\n[\(sheet.name)]\n" + reader.text
                 guard text.utf8.count <= 2_000_000 else { throw AppFailure.message("表格文字过多，请拆分工作簿。") }
@@ -84,6 +92,11 @@ enum FileFormats {
     private static func package(_ files: [(String, String)]) throws -> Data { try DocumentArchive.make(files.map { ($0.0, Data($0.1.utf8)) }) }
     private static let relPrefix = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/"
     @MainActor static func generate(format: String, content: String) throws -> Data {
+        if format == "pdf" { return try generatePDF(content) }
+        return try generatePortable(format: format, content: content)
+    }
+    static func generatePortable(format: String, content: String) throws -> Data {
+        try Task.checkCancellation()
         guard content.utf8.count <= 500_000 else { throw AppFailure.message("单次生成内容超过 500 KB，请拆分文件。") }
         if textExtensions.contains(format) { return Data(content.utf8) }
         if format == "zip" {
@@ -125,27 +138,28 @@ enum FileFormats {
                 ("xl/_rels/workbook.xml.rels", "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"\(relPrefix)worksheet\" Target=\"worksheets/sheet1.xml\"/></Relationships>"),
                 ("xl/worksheets/sheet1.xml", "<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData>\(sheet)</sheetData></worksheet>")])
         }
-        if format == "pdf" {
-            let renderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595, height: 842))
-            let storage = NSTextStorage(string: content, attributes: [.font: UIFont.systemFont(ofSize: 13), .foregroundColor: UIColor.black])
-            let layout = NSLayoutManager(); storage.addLayoutManager(layout)
-            let textContainer = NSTextContainer(size: CGSize(width: 499, height: 746)); textContainer.lineFragmentPadding = 0
-            layout.addTextContainer(textContainer)
-            // Paginate with separate text containers so text is never clipped or silently dropped.
-            var containers = [textContainer]; var ranges = [layout.glyphRange(for: textContainer)]
-            while let last = ranges.last, NSMaxRange(last) < layout.numberOfGlyphs {
-                guard containers.count < 200, last.length > 0 else { throw AppFailure.message("PDF 页数过多。") }
-                let next = NSTextContainer(size: textContainer.size); next.lineFragmentPadding = 0; layout.addTextContainer(next)
-                containers.append(next); ranges.append(layout.glyphRange(for: next))
-            }
-            return renderer.pdfData { context in
-                for range in ranges {
-                    context.beginPage(); UIColor.white.setFill(); context.cgContext.fill(CGRect(x: 0, y: 0, width: 595, height: 842))
-                    layout.drawBackground(forGlyphRange: range, at: CGPoint(x: 48, y: 48))
-                    layout.drawGlyphs(forGlyphRange: range, at: CGPoint(x: 48, y: 48))
-                }
+        throw AppFailure.message("不支持此生成格式。")
+    }
+    @MainActor private static func generatePDF(_ content: String) throws -> Data {
+        guard content.utf8.count <= 500_000 else { throw AppFailure.message("单次生成内容超过 500 KB，请拆分文件。") }
+        let renderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595, height: 842))
+        let storage = NSTextStorage(string: content, attributes: [.font: UIFont.systemFont(ofSize: 13), .foregroundColor: UIColor.black])
+        let layout = NSLayoutManager(); storage.addLayoutManager(layout)
+        let textContainer = NSTextContainer(size: CGSize(width: 499, height: 746)); textContainer.lineFragmentPadding = 0
+        layout.addTextContainer(textContainer)
+        // Paginate with separate text containers so text is never clipped or silently dropped.
+        var containers = [textContainer]; var ranges = [layout.glyphRange(for: textContainer)]
+        while let last = ranges.last, NSMaxRange(last) < layout.numberOfGlyphs {
+            guard containers.count < 200, last.length > 0 else { throw AppFailure.message("PDF 页数过多。") }
+            let next = NSTextContainer(size: textContainer.size); next.lineFragmentPadding = 0; layout.addTextContainer(next)
+            containers.append(next); ranges.append(layout.glyphRange(for: next))
+        }
+        return renderer.pdfData { context in
+            for range in ranges {
+                context.beginPage(); UIColor.white.setFill(); context.cgContext.fill(CGRect(x: 0, y: 0, width: 595, height: 842))
+                layout.drawBackground(forGlyphRange: range, at: CGPoint(x: 48, y: 48))
+                layout.drawGlyphs(forGlyphRange: range, at: CGPoint(x: 48, y: 48))
             }
         }
-        throw AppFailure.message("不支持此生成格式。")
     }
 }

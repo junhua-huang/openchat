@@ -3,7 +3,7 @@ import UniformTypeIdentifiers
 import ImageIO
 import Vision
 
-struct FileVault {
+struct FileVault: Sendable {
     let directory: URL
     init(accountID: UUID, root: URL? = nil) throws {
         let base = try root ?? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
@@ -13,9 +13,22 @@ struct FileVault {
         var values = URLResourceValues(); values.isExcludedFromBackup = true; try folder.setResourceValues(values); directory = folder
     }
     static func safeName(_ name: String) -> String {
-        let value = String(String.UnicodeScalarView(name.unicodeScalars.filter { $0.value >= 32 && !"/\\:".unicodeScalars.contains($0) }.prefix(120)))
+        let value = String(String.UnicodeScalarView(name.unicodeScalars.filter { $0.value >= 32 && $0.value != 127 && $0.value != 0x2028 && $0.value != 0x2029 && !"/\\:".unicodeScalars.contains($0) }))
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return value.isEmpty || value == "." || value == ".." ? "文件.txt" : value
+        guard !value.isEmpty, value != ".", value != ".." else { return "文件.txt" }
+        // APFS limits filename bytes, not characters. Preserve the extension
+        // and complete graphemes when shortening Chinese names or emoji.
+        let ext = URL(fileURLWithPath: value).pathExtension
+        let suffix = !ext.isEmpty && ext.utf8.count <= 24 ? "." + ext : ""
+        let stem = suffix.isEmpty ? value : String(value.dropLast(suffix.count))
+        var result = ""; var bytes = 0
+        for character in stem {
+            let size = String(character).utf8.count
+            if bytes + size + suffix.utf8.count > 220 { break }
+            result.append(character); bytes += size
+        }
+        if result.isEmpty { result = "文件" }
+        return result + suffix
     }
     func url(_ attachment: ChatAttachment) throws -> URL {
         guard attachment.storedName == URL(fileURLWithPath: attachment.storedName).lastPathComponent,
@@ -44,12 +57,14 @@ struct FileVault {
         return target
     }
     func save(data: Data, name: String, mediaType: String? = nil, text: String? = nil, note: String? = nil) throws -> ChatAttachment {
+        try Task.checkCancellation()
         guard data.count <= 10_000_000 else { throw AppFailure.message("单个附件最多 10 MB。") }
         let name = Self.safeName(name); let ext = URL(fileURLWithPath: name).pathExtension.lowercased()
         let id = UUID(); let stored = id.uuidString + "." + (ext.isEmpty ? "bin" : ext)
         let value = ChatAttachment(id: id, name: name, storedName: stored, byteCount: data.count,
             mediaType: mediaType ?? UTType(filenameExtension: ext)?.preferredMIMEType ?? "application/octet-stream", extractedText: text, note: note)
         try data.write(to: url(value), options: [.atomic, .completeFileProtection])
+        do { try Task.checkCancellation() } catch { remove(value); throw error }
         return value
     }
     func saveImage(data: Data, name: String) throws -> ChatAttachment {

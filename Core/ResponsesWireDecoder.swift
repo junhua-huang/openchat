@@ -16,7 +16,7 @@ struct ResponsesWireDecoder {
 
     init(response: HTTPURLResponse?) { self.response = response }
 
-    @MainActor mutating func push(_ raw: String, onDelta: (String) -> Void) throws -> Bool {
+    @MainActor mutating func push(_ raw: String, onActivity: ((ToolActivity) -> Void)? = nil, onDelta: (String) -> Void) throws -> Bool {
         if completed { return true }
         let line = raw.hasPrefix("\u{FEFF}") ? String(raw.dropFirst()) : raw
         if mode == .unknown {
@@ -31,50 +31,58 @@ struct ResponsesWireDecoder {
         }
         switch mode {
         case .sse:
-            if let payload = try parser.push(line) { return try consume(payload, shape: "sse", onDelta: onDelta) }
+            if let payload = try parser.push(line) { return try consume(payload, shape: "sse", onActivity: onActivity, onDelta: onDelta) }
         case .json:
             jsonBytes += line.utf8.count + 1
             guard jsonBytes <= 1_000_000 else { throw ResponseFailure.make(response: response, shape: "json_too_large") }
             json += line + "\n"
             if let data = json.data(using: .utf8), let object = try? JSONSerialization.jsonObject(with: data) {
                 guard let value = object as? [String: Any] else { throw ResponseFailure.make(response: response, shape: "json_other") }
-                let payload = json
                 json = ""; jsonBytes = 0
                 let type = value["type"] as? String ?? ""
                 guard type.hasPrefix("response.") || type == "error" else {
                     let shape = value["error"] != nil ? "json_error" : value["detail"] != nil ? "json_detail" : "json_response"
                     throw ResponseFailure.make(response: response, shape: shape, object: value)
                 }
-                return try consume(payload, shape: "json_event", onDelta: onDelta)
+                return try consumeEvent(value, shape: "json_event", onActivity: onActivity, onDelta: onDelta)
             }
         case .unknown: break
         }
         return false
     }
 
-    @MainActor mutating func finish(onDelta: (String) -> Void) throws -> Bool {
+    @MainActor mutating func finish(onActivity: ((ToolActivity) -> Void)? = nil, onDelta: (String) -> Void) throws -> Bool {
         if completed { return true }
-        if mode == .sse, let payload = parser.finish(), try consume(payload, shape: "sse", onDelta: onDelta) { return true }
+        if mode == .sse, let payload = parser.finish(), try consume(payload, shape: "sse", onActivity: onActivity, onDelta: onDelta) { return true }
         let shape = mode == .sse ? "sse_interrupted" : mode == .json ? "json_incomplete" : "empty"
         throw ResponseFailure.make(response: response, shape: shape,
             fallback: "回复连接提前结束，未收到完成事件。已保留收到的内容，可以重试。")
     }
 
-    @MainActor private mutating func consume(_ payload: String, shape: String, onDelta: (String) -> Void) throws -> Bool {
+    @MainActor private mutating func consume(_ payload: String, shape: String, onActivity: ((ToolActivity) -> Void)?, onDelta: (String) -> Void) throws -> Bool {
         if let response = response, !(200..<300).contains(response.statusCode) {
-            let object = payload.data(using: .utf8).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+            let object = try? ResponsesClient.parseEvent(payload, response: response)
             throw ResponseFailure.make(response: response, shape: shape, object: object)
         }
-        let done = try ResponsesClient.handle(payload, response: response, shape: shape) { text in
-            onDelta(text)
+        guard let event = try ResponsesClient.parseEvent(payload, response: response) else { return false }
+        return try consumeEvent(event, shape: shape, onActivity: onActivity, onDelta: onDelta)
+    }
+
+    @MainActor private mutating func consumeEvent(_ event: [String: Any], shape: String, onActivity: ((ToolActivity) -> Void)?, onDelta: (String) -> Void) throws -> Bool {
+        if let response = response, !(200..<300).contains(response.statusCode) {
+            throw ResponseFailure.make(response: response, shape: shape, object: event)
         }
-        if done, let data = payload.data(using: .utf8),
-           let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        let done = try ResponsesClient.handleEvent(event, response: response, shape: shape, onDelta: onDelta)
+        let type = event["type"] as? String ?? ""
+        for tool in ["web_search_call", "code_interpreter_call", "image_generation_call"] where type.hasPrefix("response." + tool + ".") {
+            let id = event["item_id"] as? String ?? tool
+            onActivity?(ToolActivity(id: id, name: tool, state: type.hasSuffix("completed") ? "complete" : "running", detail: type.hasSuffix("completed") ? "已完成" : "正在执行"))
+        }
+        if done,
            let value = event["response"] as? [String: Any] { output = value["output"] as? [[String: Any]] ?? [] }
         // Completed-only terminal events may contain the entire output; do not
         // duplicate it when deltas already delivered the text.
-        if done, !deliveredText, let data = payload.data(using: .utf8),
-           let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        if done, !deliveredText,
            let value = event["response"] as? [String: Any], let output = value["output"] as? [[String: Any]] {
             for item in output where item["type"] as? String == "message" {
                 for content in item["content"] as? [[String: Any]] ?? [] {
@@ -83,9 +91,7 @@ struct ResponsesWireDecoder {
                 }
             }
         }
-        if !done, let data = payload.data(using: .utf8),
-           let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           ["response.output_text.delta", "response.refusal.delta"].contains(event["type"] as? String ?? ""),
+        if !done, ["response.output_text.delta", "response.refusal.delta"].contains(type),
            let delta = event["delta"] as? String, !delta.isEmpty { deliveredText = true }
         completed = done
         return done

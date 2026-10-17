@@ -32,6 +32,9 @@ final class ChatStore: ObservableObject {
     private var pendingText: [UUID: String] = [:]
     private var flushTasks: [UUID: Task<Void, Never>] = [:]
     private var draftTask: Task<Void, Never>?
+    private var checkpointTask: Task<Void, Never>?
+    private var needsCheckpoint = false
+    private let checkpointInterval: UInt64
     var selected: ChatThread? { threads.first { $0.id == selectedID } }
     var isSending: Bool { selectedID.map { generatingThreadIDs.contains($0) } ?? false }
     var isImporting: Bool { selectedID.map { importingThreadIDs.contains($0) } ?? false }
@@ -51,9 +54,11 @@ final class ChatStore: ObservableObject {
 
     init(accountID: UUID, auth: AuthManager, apiConnection: APIConnection? = nil,
          storageDirectory: URL? = nil, transport: ChatTransport? = nil,
-         mcpConnections: MCPConnections? = nil, agentTransport: ChatAgentTransport? = nil) {
+         mcpConnections: MCPConnections? = nil, agentTransport: ChatAgentTransport? = nil,
+         checkpointInterval: UInt64 = 2_000_000_000) {
         self.accountID = accountID; self.auth = auth; self.apiConnection = apiConnection; self.transport = transport
         self.mcpConnections = mcpConnections ?? MCPConnections(); self.agentTransport = agentTransport
+        self.checkpointInterval = max(10_000_000, checkpointInterval)
         do {
             fileVault = try FileVault(accountID: accountID, root: storageDirectory?.appendingPathComponent("files"))
             var directory = try storageDirectory ?? FileManager.default.url(for: .applicationSupportDirectory,
@@ -255,9 +260,12 @@ final class ChatStore: ObservableObject {
     private func buffer(_ delta: String, threadID: UUID, runID: UUID) {
         guard runs[threadID] == runID, !delta.isEmpty else { return }
         pendingText[threadID, default: ""] += delta
+        scheduleCheckpoint()
         guard flushTasks[threadID] == nil else { return }
         flushTasks[threadID] = Task { [weak self] in
-            do { try await Task.sleep(nanoseconds: 40_000_000) } catch { return }
+            let length = self?.threads.first(where: { $0.id == threadID })?.messages.last?.text.utf8.count ?? 0
+            let delay: UInt64 = length > 64_000 ? 120_000_000 : length > 16_000 ? 80_000_000 : 40_000_000
+            do { try await Task.sleep(nanoseconds: delay) } catch { return }
             guard let self = self, self.runs[threadID] == runID else { return }
             self.flush(threadID)
         }
@@ -276,6 +284,20 @@ final class ChatStore: ObservableObject {
         flushTasks.removeValue(forKey: threadID)?.cancel()
         pendingText.removeValue(forKey: threadID); responseIDs.removeValue(forKey: threadID)
         requests.removeValue(forKey: threadID); runs.removeValue(forKey: threadID); generatingThreadIDs.remove(threadID)
+        if runs.isEmpty { checkpointTask?.cancel(); checkpointTask = nil }
+    }
+    private func scheduleCheckpoint() {
+        needsCheckpoint = true
+        guard checkpointTask == nil, !runs.isEmpty else { return }
+        let interval = checkpointInterval
+        checkpointTask = Task { [weak self] in
+            do { try await Task.sleep(nanoseconds: interval) } catch { return }
+            guard !Task.isCancelled, let self = self else { return }
+            self.checkpointTask = nil
+            for id in Array(self.pendingText.keys) { self.flush(id) }
+            if self.needsCheckpoint { self.persist() }
+            if self.needsCheckpoint && !self.runs.isEmpty { self.scheduleCheckpoint() }
+        }
     }
     func stop() { if let id = selectedID { stop(threadID: id) } }
     func stop(threadID: UUID) {
@@ -310,17 +332,25 @@ final class ChatStore: ObservableObject {
         importingThreadIDs.insert(id); defer { importingThreadIDs.remove(id) }
         for url in urls {
             do {
-                let file = try await Task.detached(priority: .userInitiated) { try vault.importFile(url) }.value
+                let file = try await FileWork.run { try vault.importFile(url) }
                 guard !Task.isCancelled, let i = threads.firstIndex(where: { $0.id == id }) else { vault.remove(file); return }
                 var files = threads[i].draftAttachments ?? []; files.append(file); threads[i].draftAttachments = files
                 if !persist() { threads[i].draftAttachments?.removeAll { $0.id == file.id }; vault.remove(file) }
-            } catch { errorText = error.localizedDescription }
+            } catch is CancellationError { return }
+            catch { errorText = error.localizedDescription }
         }
     }
     func importPhoto(_ data: Data, threadID: UUID? = nil) async {
         guard let vault = fileVault, data.count <= 10_000_000 else { errorText = "图片过大，最多 10 MB。"; return }
+        guard let target = threadID ?? selectedID else { errorText = "原对话已不可用，未添加附件。"; return }
         let url = vault.directory.appendingPathComponent(UUID().uuidString + ".jpg")
-        do { try data.write(to: url, options: [.atomic, .completeFileProtection]); await importFiles([url], threadID: threadID); try? FileManager.default.removeItem(at: url) }
+        defer { try? FileManager.default.removeItem(at: url) }
+        do {
+            try await FileWork.run { try data.write(to: url, options: [.atomic, .completeFileProtection]) }
+            try Task.checkCancellation()
+            await importFiles([url], threadID: target)
+        }
+        catch is CancellationError { }
         catch { errorText = error.localizedDescription }
     }
     func removeDraftFile(_ id: UUID) {
@@ -346,11 +376,15 @@ final class ChatStore: ObservableObject {
             var files = threads[i].messages[j].attachments ?? []; files.append(file); threads[i].messages[j].attachments = files
         case .activity(let value):
             var activities = threads[i].messages[j].toolActivities ?? []
-            if let index = activities.firstIndex(where: { $0.id == value.id }) { activities[index] = value }
+            if let index = activities.firstIndex(where: { $0.id == value.id }) {
+                guard activities[index] != value else { return }
+                activities[index] = value
+            }
             else { activities.append(value) }
             threads[i].messages[j].toolActivities = activities
         }
-        persist()
+        if case .file = event { flush(threadID); persist() }
+        else { scheduleCheckpoint() }
     }
     private func requestApproval(threadID: UUID, runID: UUID, name: String, arguments: String) async throws -> Bool {
         try Task.checkCancellation()
@@ -372,6 +406,7 @@ final class ChatStore: ObservableObject {
         do {
             try JSONEncoder().encode(ChatArchive(threads: threads, selectedID: selectedID))
                 .write(to: fileURL, options: [.atomic, .completeFileProtection])
+            needsCheckpoint = !pendingText.isEmpty
             return true
         } catch { errorText = "聊天记录未能保存到本机。请检查可用空间或设备锁定状态。"; return false }
     }

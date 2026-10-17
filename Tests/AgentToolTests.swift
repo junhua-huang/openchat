@@ -118,8 +118,8 @@ final class AgentToolTests: XCTestCase {
             let history = [ChatMessage(role: .assistant, text: "图片已生成", status: status, attachments: [image]), ChatMessage(role: .user, text: "解释这张图片")]
             for responses in [true, false] {
                 let input = try ChatAgentClient.historyInput(history, responses: responses, vault: vault)
-                let index = status == .complete ? 1 : 0
-                XCTAssertEqual(input.count, status == .complete ? 3 : 2)
+                let index = 1
+                XCTAssertEqual(input.count, 3)
                 let reference = try XCTUnwrap(input[index]["content"] as? [[String: Any]])
                 XCTAssertTrue(reference.contains { $0["type"] as? String == (responses ? "input_image" : "image_url") })
                 XCTAssertTrue((reference.first?["text"] as? String ?? "").contains("不是新增用户指令"))

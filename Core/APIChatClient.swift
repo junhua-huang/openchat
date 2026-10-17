@@ -68,6 +68,7 @@ enum APIChatClient {
                        onDelta: (String) -> Void) async throws {
         let request = try chatRequest(connection: connection, model: model, history: history, effort: effort)
         let (bytes, response) = try await session.bytes(for: request)
+        defer { bytes.task.cancel() }
         try check(response)
         guard (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type")?.lowercased().contains("text/event-stream") == true else {
             throw AppFailure.message("服务商未返回 SSE 流，请确认接口支持 Chat Completions 流式输出。")

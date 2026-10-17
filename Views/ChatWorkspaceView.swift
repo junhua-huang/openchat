@@ -261,7 +261,7 @@ struct ChatWorkspaceView: View {
                     ScrollView(.horizontal) {
                         HStack(spacing: 8) {
                             ForEach(store.selected?.draftAttachments ?? []) { file in
-                                AttachmentCard(file: file, url: try? store.fileVault?.url(file), remove: { store.removeDraftFile(file.id) }).frame(width: 240)
+                                AttachmentCard(file: file, url: try? store.fileVault?.exportURL(file), remove: { store.removeDraftFile(file.id) }).frame(width: 240)
                             }
                         }.padding(.horizontal, 12)
                     }.padding(.top, 12)

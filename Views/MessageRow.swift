@@ -28,7 +28,7 @@ struct MessageRow: View, Equatable {
                     Text("模型没有返回文字，可以重新生成。").font(.subheadline).foregroundStyle(.secondary)
                 }
                 ForEach(message.attachments ?? []) { file in
-                    AttachmentCard(file: file, url: try? fileVault?.url(file))
+                    AttachmentCard(file: file, url: try? fileVault?.exportURL(file))
                     if let note = file.note { Text(note).font(.caption2).foregroundStyle(.secondary) }
                 }
                 if message.status == .streaming {
@@ -68,7 +68,7 @@ struct MessageRow: View, Equatable {
         .environment(\.openURL, OpenURLAction { url in
             guard ["sandbox", "file"].contains(url.scheme ?? "") else { return .systemAction }
             if url.scheme == "sandbox", let file = message.attachments?.first(where: { $0.name == url.lastPathComponent }),
-               let local = try? fileVault?.url(file), FileManager.default.fileExists(atPath: local.path) {
+               let local = try? fileVault?.exportURL(file), FileManager.default.fileExists(atPath: local.path) {
                 linkedFile = AttachmentPreview(url: local)
             } else { missingFile = true }
             return .handled

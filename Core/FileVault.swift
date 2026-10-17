@@ -29,6 +29,20 @@ struct FileVault {
         guard size <= 10_000_000 else { throw AppFailure.message("附件超过 10 MB。") }
         return try Data(contentsOf: url)
     }
+    func exportURL(_ attachment: ChatAttachment) throws -> URL {
+        let source = try url(attachment)
+        guard FileManager.default.fileExists(atPath: source.path), Self.safeName(attachment.name) == attachment.name else {
+            throw AppFailure.message("附件已不可用。")
+        }
+        let folder = directory.appendingPathComponent("exports", isDirectory: true).appendingPathComponent(attachment.id.uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.protectionKey: FileProtectionType.complete])
+        let target = folder.appendingPathComponent(attachment.name)
+        if !FileManager.default.fileExists(atPath: target.path) {
+            do { try FileManager.default.linkItem(at: source, to: target) }
+            catch { try data(attachment).write(to: target, options: [.atomic, .completeFileProtection]) }
+        }
+        return target
+    }
     func save(data: Data, name: String, mediaType: String? = nil, text: String? = nil, note: String? = nil) throws -> ChatAttachment {
         guard data.count <= 10_000_000 else { throw AppFailure.message("单个附件最多 10 MB。") }
         let name = Self.safeName(name); let ext = URL(fileURLWithPath: name).pathExtension.lowercased()
@@ -73,5 +87,9 @@ struct FileVault {
         return try save(data: data, name: source.lastPathComponent, text: text,
             note: ext == "pdf" ? "提取可选择文字，不含扫描页、图片和版式。扫描件请另附图片。" : ["docx", "xlsx"].contains(ext) ? "提取正文、单元格文本、公式与缓存值；不重算公式，不含嵌入图表及版式。" : nil)
     }
-    func remove(_ attachment: ChatAttachment) { if let url = try? url(attachment) { try? FileManager.default.removeItem(at: url) } }
+    func remove(_ attachment: ChatAttachment) {
+        if let url = try? url(attachment) { try? FileManager.default.removeItem(at: url) }
+        let exported = directory.appendingPathComponent("exports", isDirectory: true).appendingPathComponent(attachment.id.uuidString)
+        try? FileManager.default.removeItem(at: exported)
+    }
 }

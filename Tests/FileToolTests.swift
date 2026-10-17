@@ -55,6 +55,18 @@ final class FileToolTests: XCTestCase {
         var bad = file; bad.storedName = "../输入.txt"; XCTAssertThrowsError(try a.url(bad))
         a.remove(file); XCTAssertThrowsError(try a.data(file))
     }
+    func testExportPreservesFriendlyFilenameAndDeletesExportWithLastFileReference() throws {
+        let root = directory(); defer { try? FileManager.default.removeItem(at: root) }
+        let vault = try FileVault(accountID: UUID(), root: root)
+        let file = try vault.save(data: Data("实际内容🙂".utf8), name: "我的说明.md", text: "实际内容🙂")
+        let exported = try vault.exportURL(file)
+        XCTAssertEqual(exported.lastPathComponent, "我的说明.md")
+        XCTAssertEqual(try Data(contentsOf: exported), try vault.data(file))
+        XCTAssertEqual(try vault.exportURL(file), exported)
+        vault.remove(file)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: exported.path))
+        XCTAssertThrowsError(try vault.exportURL(file))
+    }
     @MainActor func testArithmeticRejectsCodeAndInvalidOperations() throws {
         XCTAssertEqual(try ToolRuntime.calculate("(12 + 3.5) * -2 / 5"), -6.2, accuracy: 0.00001)
         for input in ["1/0", "2+", "process.exit()", "1;print(2)", "nan", "(1+2", "1e999"] {

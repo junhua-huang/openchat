@@ -9,15 +9,12 @@ enum AppAppearance: String, CaseIterable, Identifiable {
 }
 
 enum Palette {
-    static let accent = adaptive(0x5261D8, 0xA9B2FF)
-    static let action = adaptive(0x4D5CCB, 0xBEC5FF)
-    static let onAction = adaptive(0xFFFFFF, 0x19204F)
-    static let paper = adaptive(0xF4F5FA, 0x0D101C)
-    static let card = adaptive(0xFFFFFF, 0x1B2030)
-    static let userBubble = adaptive(0xE7EAFE, 0x292F55)
-    static let lilac = adaptive(0xCFD2FA, 0x303C78)
-    static let aqua = adaptive(0xD3EDEB, 0x163C4A)
-    static let peach = adaptive(0xF3DDD7, 0x483147)
+    static let accent = adaptive(0x242424, 0xEEEEEE)
+    static let action = adaptive(0x171717, 0xEEEEEE)
+    static let onAction = adaptive(0xFFFFFF, 0x151515)
+    static let paper = adaptive(0xFAFAFA, 0x101010)
+    static let card = adaptive(0xFFFFFF, 0x1C1C1C)
+    static let userBubble = adaptive(0xECECEC, 0x292929)
 
     static func adaptive(_ light: UInt32, _ dark: UInt32) -> Color {
         Color(uiColor: UIColor { traits in
@@ -30,28 +27,8 @@ enum Palette {
 }
 
 struct AmbientBackground: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    @State private var drift = false
-
     var body: some View {
-        GeometryReader { geometry in
-            ZStack {
-                Palette.paper
-                if !reduceTransparency {
-                    Ellipse().fill(Palette.lilac.opacity(0.65))
-                        .frame(width: geometry.size.width * 1.2, height: 350)
-                        .blur(radius: 80).offset(x: drift ? -90 : -35, y: -geometry.size.height * 0.25)
-                    Circle().fill(Palette.aqua.opacity(0.50)).frame(width: 250, height: 250)
-                        .blur(radius: 70).offset(x: geometry.size.width * 0.38, y: drift ? 80 : 130)
-                    Circle().fill(Palette.peach.opacity(0.40)).frame(width: 240, height: 240)
-                        .blur(radius: 70).offset(x: -geometry.size.width * 0.32, y: geometry.size.height * 0.39)
-                }
-            }
-            .onAppear { drift = !reduceMotion }
-            .onChange(of: reduceMotion) { _, reduced in drift = !reduced }
-            .animation(reduceMotion ? nil : .easeInOut(duration: 14).repeatForever(autoreverses: true), value: drift)
-        }.ignoresSafeArea().allowsHitTesting(false).accessibilityHidden(true)
+        Palette.paper.ignoresSafeArea().allowsHitTesting(false).accessibilityHidden(true)
     }
 }
 

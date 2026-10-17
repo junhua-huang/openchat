@@ -2,7 +2,17 @@
 
 一个原生 SwiftUI AI 聊天 App：可连接自己的 ChatGPT 账户，也可使用 DeepSeek、OpenAI API 或其他 OpenAI 兼容服务商的 API Key。
 
-**当前交付是源码验证版，不是已签名、已真机验收的安装包。** 0.2 版已经通过 GitHub macOS runner 的 Xcode 编译与模拟器 XCTest；0.3 版需要以最新提交的 CI 结果为准。真实 OAuth 登录、服务商 API 调用与 TestFlight 仍待实际凭据和设备验证。详情见 [验证记录](Docs/VALIDATION.md)。
+0.3.0 已通过云端 Xcode 编译与模拟器测试，完成签名、App Store Connect 上传和 TestFlight 安装；真机登录与模型列表已通过。0.3.1 的新构建以最新提交 CI 为准，真实聊天恢复与第三方 API 调用仍需验收。详情见 [验证记录](Docs/VALIDATION.md)。
+
+## 0.3.1：中性色与响应处理
+
+- 界面改为黑白灰，去掉紫色、彩色光晕与背景动画，保留系统 Liquid Glass 控件。
+- 根据响应体识别 SSE，兼容缺失或不准确的 Content-Type；保留 `response.completed` 完成校验。
+- 识别普通或多行 JSON 错误与直接准入失败，提供按权限、用量和临时服务故障区分的提示。
+- 错误回复可复制经过筛选的 HTTP 状态、响应格式、错误码、参数和 Request ID；不复制响应体、提示词、令牌或原始服务器消息。
+- 请求与官方最小示例对齐，仅发送模型、文本上下文和必需的 `store:false`／`stream:true`。
+
+真机已验证登录和模型列表。0.3.0 的推理在 MIME 检查处失败，截图无法确定实际返回内容；0.3.1 的回复恢复仍需更新后真机复测，不能由离线测试替代。
 
 ## 0.3 版：多个 AI API 连接
 
@@ -50,7 +60,7 @@
 
 ## 登录的关键验证项
 
-官方开源流程目前指定 `http://127.0.0.1:<port>/auth/callback`，并没有在所查文档中给出 iOS 专用接入保证。源码以 `SFSafariViewController` 保持应用内系统浏览器体验，以 `NWListener` 仅监听 `127.0.0.1`，等待三分钟并验证回调。**这是一条待真机验证的实现路径，不代表已经获得 iOS 支持或上架批准。**
+官方开源流程目前指定 `http://127.0.0.1:<port>/auth/callback`，并没有在所查文档中给出 iOS 专用接入保证。源码以 `SFSafariViewController` 保持应用内系统浏览器体验，以 `NWListener` 仅监听 `127.0.0.1`，等待三分钟并验证回调。首次登录与模型目录已在 iPhone 上通过；完整回复、续期、取消和后台恢复仍需验证。这不代表官方提供 iOS 专用支持或已获得上架批准。
 
 请先在自己的 iPhone 上完成这四项：打开授权页 → 回环回调返回 → 身份验证通过 → 收到 `response.completed`。具体测试方法见 [登录验收](Docs/AUTH-TEST.md)。若回调一直失败，先解决平台兼容性或申请官方支持的客户端配置，不能直接把官方要求的回环地址改成自定义 scheme 来假装接通。
 

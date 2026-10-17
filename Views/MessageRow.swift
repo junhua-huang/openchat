@@ -30,6 +30,11 @@ struct MessageRow: View {
                 if let problem = message.problem {
                     Label(problem, systemImage: message.status == .cancelled ? "pause.circle" : "exclamationmark.circle")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    if let diagnostic = message.diagnostic {
+                        Button { copy(diagnostic) } label: {
+                            Label(copied ? "已复制诊断信息" : "复制诊断信息", systemImage: copied ? "checkmark" : "doc.on.doc")
+                        }.font(.caption).foregroundStyle(.secondary).buttonStyle(.plain)
+                    }
                 }
                 if message.role == .assistant, message.status != .streaming {
                     HStack(spacing: 20) {

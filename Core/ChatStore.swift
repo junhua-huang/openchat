@@ -9,6 +9,7 @@ struct ChatMessage: Codable, Identifiable {
     var text: String
     var status: Status = .complete
     var problem: String?
+    var diagnostic: String?
 }
 
 struct ChatThread: Codable, Identifiable {
@@ -190,19 +191,22 @@ final class ChatStore: ObservableObject {
                 self.mark(threadID, response.id, status: .complete)
             } catch is CancellationError { self.mark(threadID, response.id, status: .cancelled, problem: "你已停止生成") }
             catch {
+                let diagnostic = (error as? ResponseFailure)?.diagnostic
                 self.mark(threadID, response.id, status: Task.isCancelled ? .cancelled : .failed,
-                          problem: Task.isCancelled ? "你已停止生成" : error.localizedDescription)
+                          problem: Task.isCancelled ? "你已停止生成" : error.localizedDescription,
+                          diagnostic: Task.isCancelled ? nil : diagnostic)
             }
         }
     }
 
     func stop() { requestTask?.cancel() }
 
-    private func mark(_ thread: UUID, _ message: UUID, status: ChatMessage.Status, problem: String? = nil) {
+    private func mark(_ thread: UUID, _ message: UUID, status: ChatMessage.Status, problem: String? = nil, diagnostic: String? = nil) {
         guard let i = threads.firstIndex(where: { $0.id == thread }),
               let j = threads[i].messages.firstIndex(where: { $0.id == message }) else { return }
         threads[i].messages[j].status = status
         threads[i].messages[j].problem = problem
+        threads[i].messages[j].diagnostic = diagnostic
     }
     private func persist() {
         guard storageReady, let fileURL = fileURL else { return }

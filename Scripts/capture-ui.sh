@@ -26,15 +26,20 @@ for surface in files tools approval; do
   xcrun simctl launch "$capture_device_id" com.example.LiaoChat --ui-preview "--ui-$surface"
   sleep 4
   xcrun simctl io "$capture_device_id" screenshot "build/ui/$surface-light.png"
-done
-xcrun simctl get_app_container "$capture_device_id" com.example.LiaoChat data > build/ui-container.txt
-python3 - <<'PY'
+  if [[ "$surface" == files ]]; then
+    xcrun simctl get_app_container "$capture_device_id" com.example.LiaoChat data > build/ui-container.txt
+    python3 - <<'PY'
 from pathlib import Path
 import shutil
 container = Path('build/ui-container.txt').read_text().strip()
 target = Path('build/generated'); target.mkdir(exist_ok=True)
-for source in Path(container, 'tmp').glob('OpenChat-UI-*/files/*/*'):
-    if source.suffix in {'.pdf', '.docx', '.xlsx', '.zip'}:
+expected = {'.pdf', '.docx', '.xlsx', '.zip'}
+for source in Path(container).rglob('*'):
+    if source.is_file() and source.suffix in expected:
         shutil.copyfile(source, target / ('native-sample' + source.suffix))
-assert {p.suffix for p in target.iterdir()} == {'.pdf', '.docx', '.xlsx', '.zip'}, 'Native sample generation incomplete'
+found = {p.suffix for p in target.iterdir()}
+print('Native document formats collected:', sorted(found))
+assert found == expected, 'Native sample generation incomplete: ' + repr(sorted(expected - found))
 PY
+  fi
+done

@@ -16,7 +16,10 @@ struct WorkspacePreview: View {
         } else { ChatWorkspaceView(store: store) }
     }
     @MainActor private static func makeStore(auth: AuthManager) -> ChatStore {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("OpenChat-UI-" + UUID().uuidString)
+        // Keep synthetic exports in the app container while the capture script
+        // switches between processes; temporary locations can be purged/remapped.
+        let base = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+        let directory = base.appendingPathComponent("OpenChat-UI-" + UUID().uuidString)
         let connection = APIConnection(name: "OpenAI API", baseURL: "https://api.openai.com/v1", apiKey: "synthetic-preview",
                                        modelIDs: ["gpt-6.1-sol"])
         let ticks = String(repeating: "\u{0060}", count: 3)

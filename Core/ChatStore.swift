@@ -108,7 +108,11 @@ final class ChatStore: ObservableObject {
             self?.persist()
         }
     }
-    func flushDrafts() { draftTask?.cancel(); draftTask = nil; persist() }
+    func flushDrafts() {
+        draftTask?.cancel(); draftTask = nil
+        for id in Array(pendingText.keys) { flush(id) }
+        persist()
+    }
     func delete(_ ids: Set<UUID>) {
         guard storageReady else { return }
         for id in ids { stop(threadID: id) }

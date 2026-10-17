@@ -12,7 +12,8 @@ struct ChatWorkspaceView: View {
     @EnvironmentObject private var apiConnections: APIConnections
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
-    @ScaledMetric(relativeTo: .largeTitle) private var titleSize: CGFloat = 34
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .title2) private var titleSize: CGFloat = 28
     @StateObject private var store: ChatStore
     @State private var editingMessage: ChatMessage?
     @State private var sheet: WorkspaceSheet?
@@ -185,7 +186,7 @@ struct ChatWorkspaceView: View {
     private var emptyState: some View {
         VStack(spacing: 24) {
             OpenChatMark(size: 58)
-            Text("有什么可以帮你？").font(.system(size: 28, weight: .semibold)).multilineTextAlignment(.center)
+            Text("有什么可以帮你？").font(.system(size: titleSize, weight: .semibold)).multilineTextAlignment(.center)
             Text(store.isAPIConnection ? store.connectionName : "从一个问题开始。")
                 .font(.subheadline).foregroundStyle(.secondary)
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
@@ -211,7 +212,8 @@ struct ChatWorkspaceView: View {
         VStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 8) {
                 TextField("发送消息", text: Binding(get: { draft }, set: { draft = $0 }), axis: .vertical)
-                    .lineLimit(1...8).focused($inputFocused).padding(.top, 16).padding(.horizontal, 18)
+                    .lineLimit(1...(dynamicTypeSize.isAccessibilitySize ? 4 : 8)).focused($inputFocused)
+                    .padding(.top, 16).padding(.horizontal, 18)
                     .accessibilityLabel("消息内容").textInputAutocapitalization(.sentences)
                 HStack(spacing: 10) {
                     Text(store.isSending ? "正在回复，可以先写下一条消息" : store.connectionName)

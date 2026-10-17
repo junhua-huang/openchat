@@ -28,14 +28,16 @@ struct ChatMessage: Codable, Identifiable, Equatable {
     }
     mutating func recordVersion() {
         guard let index = versionIndex, versions?.indices.contains(index) == true else { return }
-        versions?[index] = snapshot
+        let version = snapshot
+        versions?[index] = version
     }
     mutating func beginRegeneration(model: String) {
         recordVersion()
         if versions == nil { versions = [snapshot] }
         text = ""; status = .streaming; problem = nil; diagnostic = nil; self.model = model
         versionIndex = versions?.count ?? 0
-        versions?.append(snapshot)
+        let version = snapshot
+        versions?.append(version)
     }
     @discardableResult mutating func chooseVersion(_ index: Int) -> Bool {
         guard role == .assistant, status != .streaming, let versions = versions,

@@ -98,7 +98,7 @@ struct APIConnectionEditor: View {
                     }.buttonStyle(.borderless)
                     Text("也可直接填写其他服务商的 OpenAI 兼容接口。模型 ID 请以服务商控制台为准。")
                         .font(.caption).foregroundStyle(.secondary)
-                }
+                }.disabled(fetching)
             }
             Section {
                 TextField("连接名称", text: $name)
@@ -151,6 +151,8 @@ struct APIConnectionEditor: View {
             if existing == nil { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } } }
         }
         .onDisappear { fetchTask?.cancel() }
+        .onChange(of: baseURL) { _, _ in available = [] }
+        .onChange(of: key) { _, _ in available = [] }
         .alert("API 连接提示", isPresented: Binding(get: { problem != nil }, set: { if !$0 { problem = nil } })) {
             Button("知道了", role: .cancel) { problem = nil }
         } message: { Text(problem ?? "") }
@@ -163,6 +165,8 @@ struct APIConnectionEditor: View {
     }
 
     private func preset(_ label: String, _ url: String) {
+        guard !fetching else { return }
+        if baseURL != url { key = ""; modelText = "" }
         name = label; baseURL = url; available = []
     }
     private func save() {

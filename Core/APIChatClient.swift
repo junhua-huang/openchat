@@ -70,7 +70,7 @@ enum APIChatClient {
         }
         var parser = SSEParser()
         var state = ChatCompletionStreamState()
-        for try await line in bytes.lines {
+        for try await line in SSEByteLines(base: bytes) {
             try Task.checkCancellation()
             if let payload = try parser.push(line), try state.consume(payload, onDelta: onDelta) { return }
         }

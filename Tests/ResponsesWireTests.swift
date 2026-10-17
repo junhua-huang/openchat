@@ -2,6 +2,69 @@ import XCTest
 @testable import LiaoChat
 
 final class ResponsesWireTests: XCTestCase {
+    private func bytes(_ text: String) -> AsyncStream<UInt8> {
+        AsyncStream { continuation in
+            for byte in text.utf8 { continuation.yield(byte) }
+            continuation.finish()
+        }
+    }
+
+    func testByteLinesPreserveEmptyLinesAndUnicodeForEverySSEDelimiter() async throws {
+        for separator in ["\n", "\r\n", "\r"] {
+            let input = ["\u{FEFF}: 注释", "", "你好🙂\u{0085}\u{2028}\u{2029}", "", "末行"].joined(separator: separator)
+            var actual: [String] = []
+            for try await line in SSEByteLines(base: bytes(input)) { actual.append(line) }
+            XCTAssertEqual(actual, ["\u{FEFF}: 注释", "", "你好🙂\u{0085}\u{2028}\u{2029}", "", "末行"])
+            if separator == "\n" {
+                var nativeEmptyLines = 0
+                for await line in bytes(input).lines where line.isEmpty { nativeEmptyLines += 1 }
+                print("SSE framing probe: Foundation empty lines=\(nativeEmptyLines), preserved empty lines=\(actual.filter { $0.isEmpty }.count)")
+            }
+        }
+    }
+
+    @MainActor func testRawByteStreamReachesCompletionWithMissingMIMEAndMultilineEvents() async throws {
+        for separator in ["\n", "\r\n", "\r"] {
+            let lines = ["\u{FEFF}: heartbeat", "", "event: response.created",
+                #"data: {"type":"response.created"}"#, "", "event: response.output_text.delta",
+                #"data: {"type":"response.output_text.delta","delta":"你好🙂"}"#, "",
+                "data: {", #"data: "type":"response.completed","response":{"status":"completed"}}"#]
+            var text = ""
+            try await ResponsesClient.consume(bytes(lines.joined(separator: separator)), response: http()) { text += $0 }
+            XCTAssertEqual(text, "你好🙂")
+        }
+    }
+
+    @MainActor func testLostEventSeparatorsReproduceInvalidJSONInsteadOfCompleting() throws {
+        var decoder = ResponsesWireDecoder(response: http())
+        XCTAssertFalse(try decoder.push(#"data: {"type":"response.created"}"#) { _ in })
+        XCTAssertFalse(try decoder.push(#"data: {"type":"response.completed","response":{"status":"completed"}}"#) { _ in })
+        XCTAssertThrowsError(try decoder.finish { _ in }) { error in
+            XCTAssertTrue((error as? ResponseFailure)?.diagnostic.contains("Body: invalid_event_json") == true)
+        }
+        XCTAssertFalse(decoder.completed)
+    }
+
+    @MainActor func testEmptyDataHeartbeatDoesNotRejectNextCompletedEvent() async throws {
+        let input = "data:\n\n: keepalive\n\ndata: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n"
+        try await ResponsesClient.consume(bytes(input), response: http()) { _ in }
+    }
+
+    @MainActor func testMalformedEventsHaveDistinctSafeDiagnostics() throws {
+        for (payload, shape) in [("private content", "invalid_event_json"), ("[]", "event_not_object"),
+                                  (#"{"private":"secret-content"}"#, "event_missing_type")] {
+            XCTAssertThrowsError(try ResponsesClient.handle(payload, response: http()) { _ in }) { error in
+                let diagnostic = (error as? ResponseFailure)?.diagnostic ?? ""
+                XCTAssertTrue(diagnostic.contains("Body: " + shape))
+                XCTAssertFalse(diagnostic.contains("private"))
+                XCTAssertFalse(diagnostic.contains("secret-content"))
+            }
+        }
+        XCTAssertThrowsError(try ResponsesClient.handle(#"{"error":{"code":"subscription_sharing_usage_unavailable"}}"#, response: http()) { _ in }) { error in
+            XCTAssertTrue((error as? ResponseFailure)?.diagnostic.contains("Code: subscription_sharing_usage_unavailable") == true)
+        }
+    }
+
     private func http(_ status: Int = 200, type: String? = nil) -> HTTPURLResponse {
         var headers = ["x-request-id": "req_synthetic123"]
         if let type = type { headers["Content-Type"] = type }

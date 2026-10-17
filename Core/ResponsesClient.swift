@@ -37,8 +37,14 @@ enum ResponsesClient {
         guard let http = response as? HTTPURLResponse else {
             throw ResponseFailure.make(response: nil, shape: "non_http")
         }
-        var decoder = ResponsesWireDecoder(response: http)
-        for try await line in bytes.lines {
+        try await consume(bytes, response: http, onDelta: onDelta)
+    }
+
+    @MainActor
+    static func consume<Body: AsyncSequence>(_ bytes: Body, response: HTTPURLResponse,
+                                             onDelta: (String) -> Void) async throws where Body.Element == UInt8 {
+        var decoder = ResponsesWireDecoder(response: response)
+        for try await line in SSEByteLines(base: bytes) {
             try Task.checkCancellation()
             if try decoder.push(line, onDelta: onDelta) { return }
         }
@@ -49,8 +55,16 @@ enum ResponsesClient {
     static func handle(_ payload: String, response: HTTPURLResponse? = nil, shape: String = "sse", onDelta: (String) -> Void) throws -> Bool {
         if payload == "[DONE]" { return false }
         guard let data = payload.data(using: .utf8),
-              let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let type = event["type"] as? String else { throw ResponseFailure.make(response: response, shape: "invalid_event") }
+              let object = try? JSONSerialization.jsonObject(with: data) else {
+            throw ResponseFailure.make(response: response, shape: "invalid_event_json")
+        }
+        guard let event = object as? [String: Any] else {
+            throw ResponseFailure.make(response: response, shape: "event_not_object")
+        }
+        guard let type = event["type"] as? String, !type.isEmpty else {
+            throw ResponseFailure.make(response: response,
+                shape: event["error"] != nil ? "event_error" : "event_missing_type", object: event)
+        }
         switch type {
         case "response.output_text.delta", "response.refusal.delta":
             if let delta = event["delta"] as? String { onDelta(delta) }
@@ -82,6 +96,51 @@ struct SSEParser {
     }
     mutating func finish() -> String? {
         defer { data = []; size = 0 }
-        return data.isEmpty ? nil : data.joined(separator: "\n")
+        let payload = data.joined(separator: "\n")
+        return payload.isEmpty ? nil : payload
+    }
+}
+
+// SSE framing requires empty lines. Split raw bytes on CR, LF or CRLF without
+// relying on a general-purpose text adapter's treatment of empty lines.
+// Decode only complete lines so a network chunk cannot split a UTF-8 scalar.
+struct SSEByteLines<Base: AsyncSequence>: AsyncSequence where Base.Element == UInt8 {
+    typealias Element = String
+    let base: Base
+    func makeAsyncIterator() -> AsyncIterator { AsyncIterator(base: base.makeAsyncIterator()) }
+
+    struct AsyncIterator: AsyncIteratorProtocol {
+        var base: Base.AsyncIterator
+        private var buffer: [UInt8] = []
+        private var skipLF = false
+
+        init(base: Base.AsyncIterator) { self.base = base }
+
+        mutating func next() async throws -> String? {
+            while let byte = try await base.next() {
+                try Task.checkCancellation()
+                if skipLF {
+                    skipLF = false
+                    if byte == 10 { continue }
+                }
+                if byte == 13 || byte == 10 {
+                    skipLF = byte == 13
+                    return try takeLine()
+                }
+                guard buffer.count < 4_000_000 else {
+                    throw AppFailure.message("单行响应过大，请重新开始对话。")
+                }
+                buffer.append(byte)
+            }
+            return buffer.isEmpty ? nil : try takeLine()
+        }
+
+        private mutating func takeLine() throws -> String {
+            defer { buffer.removeAll(keepingCapacity: true) }
+            guard let line = String(bytes: buffer, encoding: .utf8) else {
+                throw AppFailure.message("回复包含无效的 UTF-8 编码，请重试。")
+            }
+            return line
+        }
     }
 }

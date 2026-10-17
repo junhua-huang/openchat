@@ -14,7 +14,7 @@
 
 | 服务 | API 基础地址 |
 | --- | --- |
-| DeepSeek | `https://api.deepseek.com/v1` |
+| DeepSeek | `https://api.deepseek.com` |
 | OpenAI API | `https://api.openai.com/v1` |
 | 其他兼容服务 | 服务商文档指定的完整基础路径，例如 `https://example.com/compatible-mode/v1` |
 

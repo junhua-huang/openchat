@@ -92,7 +92,7 @@ struct APIConnectionEditor: View {
             if existing == nil {
                 Section("快速填写地址") {
                     HStack {
-                        Button("DeepSeek") { preset("DeepSeek", "https://api.deepseek.com/v1") }
+                        Button("DeepSeek") { preset("DeepSeek", "https://api.deepseek.com") }
                         Spacer()
                         Button("OpenAI API") { preset("OpenAI API", "https://api.openai.com/v1") }
                     }.buttonStyle(.borderless)

@@ -79,7 +79,9 @@ final class APIConnections: ObservableObject {
             q[kSecMatchLimit as String] = kSecMatchLimitOne
             var item: CFTypeRef?
             let status = SecItemCopyMatching(q as CFDictionary, &item)
-            if status == errSecItemNotFound { isReady = true; errorText = nil; return }
+            if status == errSecItemNotFound {
+                connections = []; activeID = nil; isReady = true; errorText = nil; return
+            }
             guard status == errSecSuccess, let data = item as? Data else {
                 throw AppFailure.message("无法读取 API 钥匙串，请解锁设备后重试。")
             }
@@ -104,6 +106,7 @@ final class APIConnections: ObservableObject {
         guard id == nil || connections.contains(where: { $0.id == id }) else {
             throw AppFailure.message("这个 API 连接已被删除。")
         }
+        if id == activeID { return }
         try persist(connections, active: id)
     }
 

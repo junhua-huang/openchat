@@ -17,9 +17,10 @@ struct HistoryView: View {
         }.sorted { $0.updated > $1.updated }
     }
     private func group(_ thread: ChatThread) -> Int {
-        if Calendar.current.isDateInToday(thread.updated) { return 0 }
+        if thread.isPinned == true { return 0 }
+        if Calendar.current.isDateInToday(thread.updated) { return 1 }
         let week = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
-        return thread.updated > week ? 1 : 2
+        return thread.updated > week ? 2 : 3
     }
 
     var body: some View {
@@ -32,20 +33,24 @@ struct HistoryView: View {
                     } else { ContentUnavailableView.search(text: query) }
                 } else {
                     List {
-                        ForEach(0..<3, id: \.self) { section in
+                        ForEach(0..<4, id: \.self) { section in
                             let threads = results.filter { group($0) == section }
                             if !threads.isEmpty {
-                                Section(["今天", "最近七天", "更早"][section]) {
+                                Section(["已置顶", "今天", "最近七天", "更早"][section]) {
                                     ForEach(threads) { thread in
                                         Button { TouchFeedback.tap(); onSelect(thread) } label: { row(thread) }
-                                            .disabled(store.isSending)
                                             .listRowBackground(Palette.card.opacity(0.72))
                                             .contextMenu {
+                                                Button(thread.isPinned == true ? "取消置顶" : "置顶", systemImage: "pin") { store.togglePin(thread.id) }
                                                 Button("重命名", systemImage: "pencil") { renameTitle = thread.title; renameID = thread.id }
+                                                ShareLink(item: thread.markdown) { Label("分享对话", systemImage: "square.and.arrow.up") }
                                                 Button("删除对话", systemImage: "trash", role: .destructive) { deleting = thread }
                                             }
                                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                                Button("删除", role: .destructive) { deleting = thread }.disabled(store.isSending)
+                                                Button("删除", role: .destructive) { deleting = thread }
+                                            }
+                                            .swipeActions(edge: .leading) {
+                                                Button(thread.isPinned == true ? "取消置顶" : "置顶", systemImage: "pin") { store.togglePin(thread.id) }.tint(.gray)
                                             }
                                     }
                                 }
@@ -62,13 +67,13 @@ struct HistoryView: View {
                     Label("开启新对话", systemImage: "square.and.pencil").font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity).padding(18).liquidSurface(radius: 28, interactive: true)
                 }.buttonStyle(.plain).padding(.horizontal, 24).padding(.bottom, 12)
-                    .disabled(store.isSending || !store.storageReady)
+                    .disabled(!store.storageReady)
             }
             .alert("重命名对话", isPresented: Binding(get: { renameID != nil }, set: { if !$0 { renameID = nil } })) {
                 TextField("对话标题", text: $renameTitle)
                 Button("取消", role: .cancel) { renameID = nil }
                 Button("保存") { if let id = renameID { store.rename(id, to: renameTitle) }; renameID = nil }
-                    .disabled(renameTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.isSending)
+                    .disabled(renameTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             .confirmationDialog("删除这段本机对话？", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
                 Button("删除对话", role: .destructive) { if let thread = deleting { store.delete([thread.id]) }; deleting = nil }
@@ -81,12 +86,23 @@ struct HistoryView: View {
                 .foregroundStyle(thread.id == store.selectedID ? Palette.accent : .secondary).frame(width: 23)
             VStack(alignment: .leading, spacing: 6) {
                 Text(thread.title).font(.subheadline.weight(.medium)).foregroundStyle(.primary).lineLimit(1)
-                Text(thread.messages.last(where: { !$0.text.isEmpty })?.text ?? "")
+                Text(preview(thread))
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 4)
+            if store.generatingThreadIDs.contains(thread.id) {
+                ProgressView().controlSize(.small).accessibilityLabel("正在回复")
+            } else if thread.isPinned == true {
+                Image(systemName: "pin.fill").font(.caption).foregroundStyle(.secondary)
+            }
             if thread.id == store.selectedID { Image(systemName: "checkmark").font(.caption.weight(.semibold)).foregroundStyle(Palette.accent) }
         }.padding(.vertical, 9).accessibilityElement(children: .combine)
             .accessibilityValue(thread.id == store.selectedID ? "当前对话" : "")
+    }
+    private func preview(_ thread: ChatThread) -> String {
+        if !query.isEmpty, let match = thread.messages.first(where: { $0.text.localizedStandardContains(query) }) {
+            return match.text.replacingOccurrences(of: "\n", with: " ")
+        }
+        return thread.messages.last(where: { !$0.text.isEmpty })?.text.replacingOccurrences(of: "\n", with: " ") ?? ""
     }
 }

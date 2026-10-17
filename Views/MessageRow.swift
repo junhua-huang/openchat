@@ -1,88 +1,157 @@
 import SwiftUI
 import UIKit
 
-struct MessageRow: View {
+struct MessageRow: View, Equatable {
     let message: ChatMessage
     let canRetry: Bool
     let retry: () -> Void
+    let edit: () -> Void
+    let chooseVersion: (Int) -> Void
     @State private var copied = false
+    @State private var copiedDiagnostic = false
+    static func == (lhs: MessageRow, rhs: MessageRow) -> Bool { lhs.message == rhs.message && lhs.canRetry == rhs.canRetry }
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
-            if message.role == .user { Spacer(minLength: 40) }
-            VStack(alignment: .leading, spacing: 14) {
-                if message.role == .assistant {
-                    HStack(spacing: 8) {
-                        Image(systemName: "sparkle").foregroundStyle(Palette.accent)
-                        Text("OpenChat").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                    }
-                }
+            if message.role == .user { Spacer(minLength: 48) }
+            VStack(alignment: .leading, spacing: 12) {
                 if !message.text.isEmpty {
-                    if message.role == .user { Text(message.text).textSelection(.enabled).lineSpacing(5) }
-                    else { RichMessageView(text: message.text) }
+                    if message.role == .user {
+                        Text(message.text).textSelection(.enabled).lineSpacing(5)
+                    } else { RichMessageView(text: message.text).equatable() }
                 }
                 if message.status == .streaming {
                     HStack(spacing: 9) {
                         ProgressView().controlSize(.small)
-                        if message.text.isEmpty { Text("正在思考…").font(.caption).foregroundStyle(.secondary) }
-                    }.accessibilityLabel("正在回复")
+                        if message.text.isEmpty { Text("正在回复…").font(.subheadline).foregroundStyle(.secondary) }
+                    }.padding(.vertical, 4).accessibilityLabel("正在回复")
                 }
                 if let problem = message.problem {
                     Label(problem, systemImage: message.status == .cancelled ? "pause.circle" : "exclamationmark.circle")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     if let diagnostic = message.diagnostic {
-                        Button { copy(diagnostic) } label: {
-                            Label(copied ? "已复制诊断信息" : "复制诊断信息", systemImage: copied ? "checkmark" : "doc.on.doc")
+                        Button {
+                            UIPasteboard.general.string = diagnostic; copiedDiagnostic = true; TouchFeedback.tap()
+                        } label: {
+                            Label(copiedDiagnostic ? "已复制诊断信息" : "复制诊断信息", systemImage: copiedDiagnostic ? "checkmark" : "doc.on.doc")
                         }.font(.caption).foregroundStyle(.secondary).buttonStyle(.plain)
                     }
                 }
-                if message.role == .assistant, message.status != .streaming {
-                    HStack(spacing: 20) {
-                        if !message.text.isEmpty {
-                            Button { copy(message.text) } label: { Image(systemName: copied ? "checkmark" : "doc.on.doc") }
-                                .accessibilityLabel(copied ? "已复制" : "复制回复")
-                            ShareLink(item: message.text) { Image(systemName: "square.and.arrow.up") }.accessibilityLabel("分享回复")
-                        }
-                        if canRetry, message.status == .failed || message.status == .cancelled {
-                            Button { TouchFeedback.tap(); retry() } label: { Label("重新生成", systemImage: "arrow.clockwise") }
-                        }
-                    }.font(.caption).foregroundStyle(.secondary).buttonStyle(.plain)
-                }
+                if message.role == .assistant, message.status != .streaming { actions }
             }
-            .padding(message.role == .user ? 17 : 0)
-            .background(message.role == .user ? Palette.userBubble : .clear, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .padding(message.role == .user ? 16 : 0)
+            .background(message.role == .user ? Palette.userBubble : .clear,
+                        in: RoundedRectangle(cornerRadius: 24, style: .continuous))
             .contextMenu {
                 if !message.text.isEmpty {
-                    Button("复制", systemImage: "doc.on.doc") { copy(message.text) }
+                    Button("复制", systemImage: "doc.on.doc") { copy() }
                     ShareLink(item: message.text) { Label("分享", systemImage: "square.and.arrow.up") }
                 }
+                if message.role == .user { Button("编辑并重新发送", systemImage: "pencil") { edit() } }
+                if canRetry { Button("重新生成", systemImage: "arrow.clockwise") { retry() } }
             }
             if message.role == .assistant { Spacer(minLength: 0) }
         }
-        .onChange(of: message.text) { _, _ in copied = false }
+        .onChange(of: message.text) { _, _ in copied = false; copiedDiagnostic = false }
     }
-    private func copy(_ value: String) {
-        UIPasteboard.general.string = value
-        TouchFeedback.tap()
-        copied = true
+    private var actions: some View {
+        HStack(spacing: 2) {
+            if !message.text.isEmpty {
+                Button { copy() } label: { Image(systemName: copied ? "checkmark" : "doc.on.doc").frame(width: 36, height: 36) }
+                    .accessibilityLabel(copied ? "已复制" : "复制回复")
+                ShareLink(item: message.text) { Image(systemName: "square.and.arrow.up").frame(width: 36, height: 36) }
+                    .accessibilityLabel("分享回复")
+            }
+            if canRetry {
+                Button { TouchFeedback.tap(); retry() } label: { Image(systemName: "arrow.clockwise").frame(width: 36, height: 36) }
+                    .accessibilityLabel("重新生成回复")
+                if message.versionCount > 1 {
+                    HStack(spacing: 0) {
+                        Button { chooseVersion(message.activeVersion - 1) } label: {
+                            Image(systemName: "chevron.left").frame(width: 32, height: 36)
+                        }.disabled(message.activeVersion == 0).accessibilityLabel("上一版回复")
+                        Text("\(message.activeVersion + 1) / \(message.versionCount)").font(.caption.monospacedDigit())
+                        Button { chooseVersion(message.activeVersion + 1) } label: {
+                            Image(systemName: "chevron.right").frame(width: 32, height: 36)
+                        }.disabled(message.activeVersion + 1 >= message.versionCount).accessibilityLabel("下一版回复")
+                    }.padding(.leading, 4)
+                }
+            }
+        }.font(.system(size: 14)).foregroundStyle(.secondary).buttonStyle(.plain).padding(.leading, -9)
+    }
+    private func copy() {
+        UIPasteboard.general.string = message.text; TouchFeedback.tap(); copied = true
     }
 }
 
-struct RichMessageView: View {
+struct RichMessageView: View, Equatable {
     let text: String
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             ForEach(Array(MessageContent.blocks(text).enumerated()), id: \.offset) { _, block in
                 switch block {
-                case .prose(let prose):
-                    Text((try? AttributedString(markdown: prose,
-                          options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(prose))
-                        .textSelection(.enabled).lineSpacing(6).tint(Palette.accent)
-                        .fixedSize(horizontal: false, vertical: true)
+                case .prose(let prose): inline(prose).lineSpacing(6)
+                case .heading(let level, let text):
+                    inline(text).font(headingFont(level)).fontWeight(.semibold)
+                        .padding(.top, level < 3 ? 9 : 3)
                 case .code(let language, let code): CodeBlockView(language: language, code: code)
+                case .quote(let quote):
+                    HStack(alignment: .top, spacing: 12) {
+                        RoundedRectangle(cornerRadius: 2).fill(.secondary.opacity(0.4)).frame(width: 3)
+                        inline(quote).foregroundStyle(.secondary).lineSpacing(5).padding(.vertical, 3)
+                    }.fixedSize(horizontal: false, vertical: true)
+                case .divider: Divider().padding(.vertical, 5)
+                case .listItem(let depth, let marker, let body, let checked):
+                    HStack(alignment: .firstTextBaseline, spacing: 9) {
+                        if let checked = checked {
+                            Image(systemName: checked ? "checkmark.square" : "square").foregroundStyle(.secondary).frame(width: 24)
+                        } else { Text(marker).foregroundStyle(.secondary).frame(minWidth: 24, alignment: .trailing) }
+                        inline(body).lineSpacing(5).frame(maxWidth: .infinity, alignment: .leading)
+                    }.padding(.leading, CGFloat(depth * 17))
+                case .table(let headers, let alignment, let rows):
+                    MarkdownTableView(headers: headers, alignment: alignment, rows: rows)
                 }
             }
-        }
+        }.frame(maxWidth: .infinity, alignment: .leading).tint(Palette.accent).textSelection(.enabled)
+    }
+    private func inline(_ value: String) -> Text {
+        Text((try? AttributedString(markdown: value, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+             ?? AttributedString(value))
+    }
+    private func headingFont(_ level: Int) -> Font {
+        switch level { case 1: return .title2; case 2: return .title3; default: return .headline }
+    }
+}
+
+private struct MarkdownTableView: View {
+    let headers: [String]
+    let alignment: [TableAlignment]
+    let rows: [[String]]
+    var body: some View {
+        ScrollView(.horizontal) {
+            VStack(spacing: 0) {
+                row(headers, header: true)
+                ForEach(Array(rows.enumerated()), id: \.offset) { index, cells in
+                    Divider()
+                    row(cells, header: false).background(index.isMultiple(of: 2) ? Palette.paper.opacity(0.7) : .clear)
+                }
+            }.background(Palette.card).clipShape(RoundedRectangle(cornerRadius: 14))
+                .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.secondary.opacity(0.18)))
+        }.textSelection(.enabled).accessibilityLabel("表格，可横向滚动")
+    }
+    private func row(_ cells: [String], header: Bool) -> some View {
+        HStack(alignment: .top, spacing: 0) {
+            ForEach(headers.indices, id: \.self) { column in
+                Text((try? AttributedString(markdown: cells.indices.contains(column) ? cells[column] : "",
+                      options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(""))
+                    .font(.subheadline).fontWeight(header ? .semibold : .regular).lineSpacing(4)
+                    .frame(width: 142, alignment: cellAlignment(column)).padding(12)
+            }
+        }.background(header ? Palette.userBubble : .clear)
+    }
+    private func cellAlignment(_ index: Int) -> Alignment {
+        guard alignment.indices.contains(index) else { return .leading }
+        switch alignment[index] { case .leading: return .leading; case .center: return .center; case .trailing: return .trailing }
     }
 }
 
@@ -96,18 +165,17 @@ private struct CodeBlockView: View {
                 Text(language.isEmpty ? "代码" : language).lineLimit(1)
                 Spacer()
                 Button {
-                    UIPasteboard.general.string = code
-                    TouchFeedback.tap()
-                    copied = true
-                } label: { Label(copied ? "已复制" : "复制", systemImage: copied ? "checkmark" : "doc.on.doc") }
+                    UIPasteboard.general.string = code; TouchFeedback.tap(); copied = true
+                } label: { Label(copied ? "已复制" : "复制代码", systemImage: copied ? "checkmark" : "doc.on.doc") }
                     .buttonStyle(.plain).accessibilityLabel("复制代码")
             }.font(.caption).foregroundStyle(.secondary).padding(.horizontal, 16).padding(.vertical, 12)
             Divider().opacity(0.45)
             ScrollView(.horizontal) {
                 Text(code).font(.system(.subheadline, design: .monospaced)).textSelection(.enabled)
-                    .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                    .lineSpacing(4).padding(16).frame(maxWidth: .infinity, alignment: .leading)
             }
-        }.background(Palette.card.opacity(0.80), in: RoundedRectangle(cornerRadius: 19))
+        }.background(Palette.card, in: RoundedRectangle(cornerRadius: 18))
+            .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(.secondary.opacity(0.14)))
             .onChange(of: code) { _, _ in copied = false }
     }
 }

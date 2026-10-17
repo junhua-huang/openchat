@@ -13,7 +13,7 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 35
     env:
-      APP_BUNDLE_ID: ${{ vars.APP_BUNDLE_ID }}
+      APP_BUNDLE_ID: ${{ vars.APP_BUNDLE_ID || 'com.junhuahuang.openchat' }}
       APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID || 'B2Y3564MKK' }}
       BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
       P12_PASSWORD: ${{ secrets.P12_PASSWORD }}

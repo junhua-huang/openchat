@@ -8,7 +8,7 @@
 
 - ChatGPT 与兼容 API 的 SSE 使用原始字节分行，保留空行边界；兼容 CR、LF、CRLF 和分散到多个字节的 UTF-8。
 - 忽略空 data 心跳；分别报告无效 JSON、非对象事件与缺少类型，保留结构化错误码，不复制原始内容。
-- 真机 0.3.1 返回 HTTP 200、缺失 Content-Type、invalid_event。空行丢失可以在离线夹具中复现相同解析失败，但尚未取得真实响应体，根因及真实聊天恢复仍需验收。
+- 真机 0.3.1 返回 HTTP 200、缺失 Content-Type、invalid_event。云端已复现 Foundation 的 `.lines` 丢弃 SSE 空行（原本两条空行变为零条），使多条事件拼成非法 JSON；真实设备恢复仍需新版验收。
 
 ## 0.3.1：中性色与响应处理
 

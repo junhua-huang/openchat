@@ -2,7 +2,7 @@
 
 核对日期：2026-10-18（北京时间）。本地执行环境为 Linux，没有 Xcode、iOS SDK、Apple 签名材料或真实登录会话。0.3.0 已在 GitHub macOS runner 通过 Xcode 编译与 18 项测试，并完成签名、上传和 TestFlight 安装。0.3.1 已通过云端编译与 30 项测试并成功上传。0.3.2 以对应提交的 CI 运行结果为准。
 
-真机反馈：ChatGPT 登录和模型目录成功；发送文字后在 Content-Type 检查处失败。尚未取得实际响应体和 MIME 值，因此根因未确认。0.3.1 的诊断为 HTTP 200、Content-Type missing、Body invalid_event。缺少事件空行边界的夹具可复现解析失败；真实响应体未知，尚不能确认设备故障根因。0.3.2 改用保留 SSE 空行的字节分行器，并细分失败形状。
+真机反馈：ChatGPT 登录和模型目录成功；发送文字后在 Content-Type 检查处失败。尚未取得实际响应体和 MIME 值，因此根因未确认。0.3.1 的诊断为 HTTP 200、Content-Type missing、Body invalid_event。云端运行已验证 Foundation `.lines` 将合成流中的两条空行丢弃为零条；新字节读取保留两条。丢失分隔的夹具会出现相同事件 JSON 解析失败。真实设备恢复仍需复测。0.3.2 改用保留 SSE 空行的字节分行器，并细分失败形状。
 
 ## 已执行并通过
 

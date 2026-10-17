@@ -14,7 +14,8 @@ final class ResponsesWireTests: XCTestCase {
             let input = ["\u{FEFF}: 注释", "", "你好🙂\u{0085}\u{2028}\u{2029}", "", "末行"].joined(separator: separator)
             var actual: [String] = []
             for try await line in SSEByteLines(base: bytes(input)) { actual.append(line) }
-            XCTAssertEqual(actual, ["\u{FEFF}: 注释", "", "你好🙂\u{0085}\u{2028}\u{2029}", "", "末行"])
+            // Foundation's UTF-8 conversion consumes the initial BOM.
+            XCTAssertEqual(actual, [": 注释", "", "你好🙂\u{0085}\u{2028}\u{2029}", "", "末行"])
             if separator == "\n" {
                 var nativeEmptyLines = 0
                 for try await line in bytes(input).lines where line.isEmpty { nativeEmptyLines += 1 }

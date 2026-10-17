@@ -97,4 +97,16 @@ final class FileToolTests: XCTestCase {
         let generated = try XCTUnwrap(runtime.files.last)
         XCTAssertEqual(try DocumentArchive(vault.data(generated)).content("二进制.bin"), original)
     }
+    @MainActor func testMCPDocumentResourcesRemainReadableAfterSaving() throws {
+        let root = directory(); defer { try? FileManager.default.removeItem(at: root) }
+        let vault = try FileVault(accountID: UUID(), root: root)
+        let data = try FileFormats.generate(format: "docx", content: "MCP 生成文档🙂")
+        let file = try XCTUnwrap(ToolRuntime.saveResource(["mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "blob": data.base64EncodedString()], vault: vault))
+        XCTAssertEqual(file.extractedText?.trimmingCharacters(in: .newlines), "MCP 生成文档🙂")
+        XCTAssertEqual(try vault.data(file), data)
+        let text = try XCTUnwrap(ToolRuntime.saveResource(["text": "MCP 文本", "mimeType": "text/plain"], vault: vault))
+        XCTAssertEqual(text.extractedText, "MCP 文本")
+        XCTAssertThrowsError(try ToolRuntime.saveResource(["blob": "invalid base64 !"], vault: vault))
+    }
 }

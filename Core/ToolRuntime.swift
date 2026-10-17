@@ -84,6 +84,21 @@ private struct Arithmetic {
         return tools
     }
     func close() async { for client in clients.values { await client.disconnect() } }
+    static func saveResource(_ resource: [String: Any], vault: FileVault) throws -> ChatAttachment? {
+        let mime = resource["mimeType"] as? String ?? "application/octet-stream"
+        let ext = UTType(mimeType: mime)?.preferredFilenameExtension ?? "bin"
+        if let encoded = resource["blob"] as? String {
+            guard let data = Data(base64Encoded: encoded) else { throw AppFailure.message("MCP 资源编码无效。") }
+            if mime.hasPrefix("image/") && mime != "image/svg+xml" { return try vault.saveImage(data: data, name: "MCP-图片." + ext) }
+            let text = try? FileFormats.extract(data, ext: ext)
+            return try vault.save(data: data, name: "MCP-文件." + ext, mediaType: mime, text: text)
+        }
+        if let text = resource["text"] as? String {
+            let suffix = FileFormats.textExtensions.contains(ext) ? ext : "txt"
+            return try vault.save(data: Data(text.utf8), name: "MCP-文本." + suffix, text: text)
+        }
+        return nil
+    }
     func execute(_ call: ToolCall) async throws -> String {
         try Task.checkCancellation()
         let label = remote[call.name].map { $0.0.name + " / " + $0.1.name } ?? call.name
@@ -158,9 +173,7 @@ private struct Arithmetic {
                     }
                     if let resource = content["resource"] as? [String: Any] {
                         if let text = resource["text"] as? String { texts.append(String(text.prefix(30000))) }
-                        if let encoded = resource["blob"] as? String, let data = Data(base64Encoded: encoded) {
-                            let mime = resource["mimeType"] as? String ?? "application/octet-stream"
-                            let file = try vault.save(data: data, name: "MCP-文件." + (UTType(mimeType: mime)?.preferredFilenameExtension ?? "bin"), mediaType: mime)
+                        if let file = try Self.saveResource(resource, vault: vault) {
                             files.append(file); event(.file(file)); texts.append("附件已保存：\(file.name)，file_id=\(file.id.uuidString)")
                         }
                     }

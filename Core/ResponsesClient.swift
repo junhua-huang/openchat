@@ -117,10 +117,12 @@ struct SSEByteLines<Base: AsyncSequence>: AsyncSequence where Base.Element == UI
         var base: Base.AsyncIterator
         private var buffer: [UInt8] = []
         private var skipLF = false
+        private var reachedEnd = false
 
         init(base: Base.AsyncIterator) { self.base = base }
 
         mutating func next() async throws -> String? {
+            guard !reachedEnd else { return nil }
             while let byte = try await base.next() {
                 try Task.checkCancellation()
                 if skipLF {
@@ -136,6 +138,7 @@ struct SSEByteLines<Base: AsyncSequence>: AsyncSequence where Base.Element == UI
                 }
                 buffer.append(byte)
             }
+            reachedEnd = true
             return buffer.isEmpty ? nil : try takeLine()
         }
 

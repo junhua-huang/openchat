@@ -2,6 +2,24 @@ import XCTest
 @testable import LiaoChat
 
 final class ResponsesWireTests: XCTestCase {
+    private struct SingleEOF: AsyncSequence {
+        typealias Element = UInt8
+        let bytes: [UInt8]
+        func makeAsyncIterator() -> Iterator { Iterator(bytes: bytes) }
+        struct Iterator: AsyncIteratorProtocol {
+            let bytes: [UInt8]; var index = 0; var ended = false
+            mutating func next() async throws -> UInt8? {
+                guard !ended else { throw AppFailure.message("Read after terminal EOF") }
+                guard index < bytes.count else { ended = true; return nil }
+                defer { index += 1 }; return bytes[index]
+            }
+        }
+    }
+    func testByteLinesNeverReadUnderlyingIteratorAgainAfterEOF() async throws {
+        var lines: [String] = []
+        for try await line in SSEByteLines(base: SingleEOF(bytes: Array("末行🙂没有换行".utf8))) { lines.append(line) }
+        XCTAssertEqual(lines, ["末行🙂没有换行"])
+    }
     private func bytes(_ text: String) -> AsyncStream<UInt8> {
         AsyncStream { continuation in
             for byte in text.utf8 { continuation.yield(byte) }

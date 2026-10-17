@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 @testable import LiaoChat
 
 final class AgentToolTests: XCTestCase {
@@ -104,6 +105,25 @@ final class AgentToolTests: XCTestCase {
             let data = try JSONSerialization.data(withJSONObject: parts)
             let text = String(data: data, encoding: .utf8)!
             XCTAssertTrue(text.contains(file.id.uuidString)); XCTAssertFalse(text.contains(root.path)); XCTAssertFalse(text.contains(file.storedName))
+        }
+    }
+    @MainActor func testGeneratedImageCanBeSeenAgainInFollowUpContext() throws {
+        let root = directory(); defer { try? FileManager.default.removeItem(at: root) }
+        let vault = try FileVault(accountID: UUID(), root: root)
+        let data = try XCTUnwrap(UIGraphicsImageRenderer(size: CGSize(width: 2, height: 2)).image { context in
+            context.cgContext.setFillColor(UIColor.red.cgColor); context.cgContext.fill(CGRect(x: 0, y: 0, width: 2, height: 2))
+        }.pngData())
+        let image = try vault.saveImage(data: data, name: "生成.png")
+        for status in [ChatMessage.Status.complete, .cancelled] {
+            let history = [ChatMessage(role: .assistant, text: "图片已生成", status: status, attachments: [image]), ChatMessage(role: .user, text: "解释这张图片")]
+            for responses in [true, false] {
+                let input = try ChatAgentClient.historyInput(history, responses: responses, vault: vault)
+                let index = status == .complete ? 1 : 0
+                XCTAssertEqual(input.count, status == .complete ? 3 : 2)
+                let reference = try XCTUnwrap(input[index]["content"] as? [[String: Any]])
+                XCTAssertTrue(reference.contains { $0["type"] as? String == (responses ? "input_image" : "image_url") })
+                XCTAssertTrue((reference.first?["text"] as? String ?? "").contains("不是新增用户指令"))
+            }
         }
     }
 }

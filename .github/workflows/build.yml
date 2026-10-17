@@ -29,12 +29,14 @@ jobs:
           with open(os.environ['GITHUB_ENV'], 'a') as f: f.write('SIMULATOR_ID=' + candidates[0]['udid'] + '\n')
           PY
       - name: Build and run tests
+        timeout-minutes: 12
         run: |
           xcodebuild test -project LiaoChat.xcodeproj -scheme LiaoChat -configuration Debug \
             -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
             -derivedDataPath build/DerivedData -resultBundlePath build/Tests.xcresult \
             CODE_SIGNING_ALLOWED=NO
       - name: Capture native chat UI
+        timeout-minutes: 8
         run: bash Scripts/capture-ui.sh
       - name: Retain native UI checks
         uses: actions/upload-artifact@v4

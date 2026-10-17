@@ -48,6 +48,7 @@ final class MCPTests: XCTestCase {
     }
     @MainActor func testStreamableHTTPHandshakeSessionHeadersPaginationAndToolCall() async throws {
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [MCPMockProtocol.self]
+        config.timeoutIntervalForRequest = 5; config.timeoutIntervalForResource = 10
         let session = URLSession(configuration: config)
         defer { session.invalidateAndCancel(); MCPMockProtocol.handler = nil }
         var requests: [URLRequest] = []

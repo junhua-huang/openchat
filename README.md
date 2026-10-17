@@ -1,10 +1,22 @@
 # OpenChat · Liquid Glass
 
-一个原生 SwiftUI AI 聊天 App 的开源源码原型：连接自己的 ChatGPT 账户，授权后通过官方 Responses API 使用符合条件的 ChatGPT 套餐额度。
+一个原生 SwiftUI AI 聊天 App：可连接自己的 ChatGPT 账户，也可使用 DeepSeek、OpenAI API 或其他 OpenAI 兼容服务商的 API Key。
 
-**当前交付是源码验证版，不是已签名、已真机验收的安装包。** 本次环境没有 macOS、Xcode 或你的 Apple 签名材料；尚未运行 Xcode 编译、XCTest、真实 OAuth 登录和模型推理。Swift 语法解析与工程结构检查见 [验证记录](Docs/VALIDATION.md)。
+**当前交付是源码验证版，不是已签名、已真机验收的安装包。** 0.2 版已经通过 GitHub macOS runner 的 Xcode 编译与模拟器 XCTest；0.3 版需要以最新提交的 CI 结果为准。真实 OAuth 登录、服务商 API 调用与 TestFlight 仍待实际凭据和设备验证。详情见 [验证记录](Docs/VALIDATION.md)。
 
-## 0.2 版有什么
+## 0.3 版：多个 AI API 连接
+
+- 无需 ChatGPT 登录即可进入 API 模式。
+- 保存多个服务商的连接：名称、HTTPS 基础地址、API Key、一个或多个模型 ID。
+- DeepSeek 与 OpenAI API 地址快捷填写；自定义地址保留服务商的版本路径。
+- 获取模型列表或手动配置模型；不支持 `/models` 的服务仍可使用手动模型。
+- Chat Completions SSE 流式回复、停止、重试；区分正常结束、长度截断、策略拦截与提前断流。
+- Keychain 保存 API 连接与密钥，连接各自拥有独立的本机聊天记录。
+- API 请求直接到你配置的地址，拒绝明文 HTTP、URL 内凭据与重定向；不使用开发者中转。
+
+使用方法和兼容范围见 [API 连接指南](Docs/API-CONNECTIONS.md)。API 按服务商规则独立计费，与 ChatGPT 套餐授权分开。
+
+## 基础功能与液态玻璃界面
 
 - 原生液态玻璃导航与输入栏；iOS 26 及以上使用 `glassEffect`，较旧系统使用系统磨砂材质回退。
 - 中文界面、跟随系统／浅色／深色外观、iPhone／iPad 自适应；适配降低透明度、增强对比度和减少动态效果。
@@ -53,6 +65,8 @@
 | `Core/IdentityVerifier.swift` | OIDC 元数据与 RS256／ES256 验签 |
 | `Core/LoopbackServer.swift` | 仅回环地址的本地回调监听 |
 | `Core/ResponsesClient.swift` | 模型目录、Responses API、SSE |
+| `Core/APIConnection.swift` | API 配置校验、多连接钥匙串存储与选择 |
+| `Core/APIChatClient.swift` | 兼容 Chat Completions 的模型目录、请求与流式解码 |
 | `Core/ChatStore.swift` | 聊天状态、账户隔离、本地持久化 |
 | `Core/MessageContent.swift` | 流式 Markdown 围栏代码块拆分 |
 | `Views/` | 液态玻璃主题、登录、聊天、历史、模型与账户设置 |
@@ -84,6 +98,8 @@
 - [Apple：TestFlight](https://developer.apple.com/help/app-store-connect/test-a-beta-version/testflight-overview/)
 - [Apple：采用 Liquid Glass](https://developer.apple.com/documentation/technologyoverviews/adopting-liquid-glass)
 - [Apple：自定义 Liquid Glass](https://developer.apple.com/documentation/swiftui/applying-liquid-glass-to-custom-views)
+- [DeepSeek：首次调用 API](https://api-docs.deepseek.com/zh-cn/)
+- [OpenAI：Chat Completions 流式事件](https://developers.openai.com/api/reference/resources/chat/subresources/completions/streaming-events)
 
 ## 许可证
 

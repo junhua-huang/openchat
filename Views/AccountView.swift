@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AccountView: View {
     @EnvironmentObject private var auth: AuthManager
+    @EnvironmentObject private var apiConnections: APIConnections
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var store: ChatStore
     let onConnect: (UUID?) -> Void
@@ -15,24 +16,35 @@ struct AccountView: View {
             ZStack {
                 AmbientBackground()
                 Form {
-                    Section {
-                        HStack(spacing: 16) {
-                            Image(systemName: "person.crop.circle.fill").font(.system(size: 45)).foregroundStyle(Palette.accent.gradient)
-                            VStack(alignment: .leading, spacing: 7) {
-                                Text(auth.activeAccount?.email ?? "ChatGPT 账户").font(.subheadline.weight(.semibold)).lineLimit(1)
-                                Label(auth.activeAccount?.tokens?.permitsInference == true ? "套餐使用已授权" : "尚未授权套餐使用",
-                                      systemImage: auth.activeAccount?.tokens?.permitsInference == true ? "checkmark.shield" : "exclamationmark.shield")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                        }.padding(.vertical, 10)
-                        Link(destination: URL(string: "https://chatgpt.com/#settings")!) {
-                            Label("管理 ChatGPT 用量与授权", systemImage: "arrow.up.right.square")
+                    Section("AI 服务") {
+                        NavigationLink { APISettingsView() } label: {
+                            Label("API 连接与服务商", systemImage: "server.rack")
                         }
-                        if let account = auth.activeAccount {
-                            Button { onConnect(account.id) } label: { Label("重新连接当前账户", systemImage: "arrow.triangle.2.circlepath") }
-                                .disabled(auth.isBusy)
+                        if let connection = store.apiConnection {
+                            LabeledContent("正在使用", value: connection.name)
+                            Text(connection.host).font(.caption).foregroundStyle(.secondary)
                         }
                     }.listRowBackground(Palette.card.opacity(0.78))
+                    if !store.isAPIConnection {
+                        Section {
+                            HStack(spacing: 16) {
+                                Image(systemName: "person.crop.circle.fill").font(.system(size: 45)).foregroundStyle(Palette.accent.gradient)
+                                VStack(alignment: .leading, spacing: 7) {
+                                    Text(auth.activeAccount?.email ?? "ChatGPT 账户").font(.subheadline.weight(.semibold)).lineLimit(1)
+                                    Label(auth.activeAccount?.tokens?.permitsInference == true ? "套餐使用已授权" : "尚未授权套餐使用",
+                                          systemImage: auth.activeAccount?.tokens?.permitsInference == true ? "checkmark.shield" : "exclamationmark.shield")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                            }.padding(.vertical, 10)
+                            Link(destination: URL(string: "https://chatgpt.com/#settings")!) {
+                                Label("管理 ChatGPT 用量与授权", systemImage: "arrow.up.right.square")
+                            }
+                            if let account = auth.activeAccount {
+                                Button { onConnect(account.id) } label: { Label("重新连接当前账户", systemImage: "arrow.triangle.2.circlepath") }
+                                    .disabled(auth.isBusy)
+                            }
+                        }.listRowBackground(Palette.card.opacity(0.78))
+                    }
                     Section("外观与体验") {
                         Picker("外观", selection: $appearance) {
                             ForEach(AppAppearance.allCases) { option in Text(option.title).tag(option.rawValue) }
@@ -42,13 +54,16 @@ struct AccountView: View {
                     Section("账户与工作空间") {
                         ForEach(auth.accounts) { account in
                             Button {
-                                if account.tokens != nil { auth.select(account.id); dismiss() }
+                                if account.tokens != nil {
+                                    do { try apiConnections.select(nil); auth.select(account.id); dismiss() }
+                                    catch { auth.errorText = error.localizedDescription }
+                                }
                                 else { onConnect(account.id) }
                             } label: {
                                 HStack {
                                     Text(account.label).font(.subheadline).foregroundStyle(.primary).lineLimit(1)
                                     Spacer()
-                                    if auth.activeID == account.id { Image(systemName: "checkmark").foregroundStyle(Palette.accent) }
+                                    if !store.isAPIConnection, auth.activeID == account.id { Image(systemName: "checkmark").foregroundStyle(Palette.accent) }
                                 }
                             }.disabled(auth.isBusy)
                         }
@@ -59,24 +74,26 @@ struct AccountView: View {
                         Button("清空当前连接的聊天记录", role: .destructive) { confirmClear = true }
                             .disabled(auth.isBusy || !store.storageReady)
                     } header: { Text("聊天记录") } footer: {
-                        Text("记录按连接分别保存在本机。发送消息时，会把本次对话所需上下文发送给 OpenAI，不同步到 ChatGPT 历史记录。")
+                        Text("记录按连接分别保存在本机。发送时会把本次对话所需上下文交给当前 AI 服务商，不同步到 ChatGPT 历史记录。")
                     }.listRowBackground(Palette.card.opacity(0.78))
-                    Section {
-                        Button(role: .destructive) { confirmSignOut = true } label: {
-                            HStack { Text("退出当前连接"); Spacer(); if auth.isBusy { ProgressView() } }
-                        }.disabled(auth.isBusy)
-                    } footer: { Text("退出会清除本机令牌并尝试撤销远程会话，本机聊天记录将保留。") }
-                        .listRowBackground(Palette.card.opacity(0.78))
+                    if !store.isAPIConnection {
+                        Section {
+                            Button(role: .destructive) { confirmSignOut = true } label: {
+                                HStack { Text("退出当前连接"); Spacer(); if auth.isBusy { ProgressView() } }
+                            }.disabled(auth.isBusy)
+                        } footer: { Text("退出会清除本机令牌并尝试撤销远程会话，本机聊天记录将保留。") }
+                            .listRowBackground(Palette.card.opacity(0.78))
+                    }
                     Section {
                         HStack {
                             OpenChatMark(size: 42)
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("openchat").font(.system(.subheadline, design: .rounded, weight: .semibold))
-                                Text("\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.2.0") · 开源客户端")
+                                Text("\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.3.0") · 开源客户端")
                                     .font(.caption).foregroundStyle(.secondary)
                             }.padding(.leading, 7)
                         }.padding(.vertical, 5)
-                        Text("独立开源项目，与 OpenAI 无隶属关系。模型与额度由你的 ChatGPT 账户决定。")
+                        Text("独立开源项目，与 AI 服务商无隶属关系。模型、额度和费用由当前连接的服务商决定。")
                             .font(.caption).foregroundStyle(.secondary)
                     }.listRowBackground(Palette.card.opacity(0.78))
                 }.scrollContentBackground(.hidden)

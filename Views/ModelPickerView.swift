@@ -31,20 +31,20 @@ struct ModelPickerView: View {
                                     .accessibilityValue(model.slug == store.selectedModel ? "已选择" : "")
                             }
                         } footer: {
-                            Text("列表来自当前 ChatGPT 连接，模型使用受账户与工作空间权限限制。")
+                            Text(store.isAPIConnection ? "来自当前 API 连接。手动配置的模型始终保留，刷新可读取服务商的模型列表。" : "列表来自当前 ChatGPT 连接，模型使用受账户与工作空间权限限制。")
                         }
                         if filtered.isEmpty {
                             Section {
-                                Text(query.isEmpty ? "暂时没有可用模型。请刷新，或在账户设置中检查套餐授权。" : "没有找到匹配的模型。")
+                                Text(query.isEmpty ? "暂时没有可用模型。请刷新，或在账户设置中检查连接配置。" : "没有找到匹配的模型。")
                                     .font(.subheadline).foregroundStyle(.secondary)
                             }.listRowBackground(Palette.card.opacity(0.75))
                         }
                         Section {
-                            Button { Task { await store.loadModels() } } label: {
+                            Button { Task { await store.loadModels(refresh: true) } } label: {
                                 Label("刷新模型列表", systemImage: "arrow.clockwise")
                             }.disabled(store.isLoadingModels || store.isSending)
                         }.listRowBackground(Palette.card.opacity(0.75))
-                    }.scrollContentBackground(.hidden).refreshable { await store.loadModels() }
+                    }.scrollContentBackground(.hidden).refreshable { await store.loadModels(refresh: true) }
                 }
             }
             .searchable(text: $query, prompt: "搜索模型")

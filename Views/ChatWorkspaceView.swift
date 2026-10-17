@@ -9,6 +9,7 @@ private struct ChatBottomKey: PreferenceKey {
 
 struct ChatWorkspaceView: View {
     @EnvironmentObject private var auth: AuthManager
+    @EnvironmentObject private var apiConnections: APIConnections
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ScaledMetric(relativeTo: .largeTitle) private var titleSize: CGFloat = 34
     @StateObject private var store: ChatStore
@@ -19,14 +20,13 @@ struct ChatWorkspaceView: View {
     @State private var isNearBottom = true
     @FocusState private var inputFocused: Bool
 
-    init(accountID: UUID, auth: AuthManager) {
-        _store = StateObject(wrappedValue: ChatStore(accountID: accountID, auth: auth))
+    init(accountID: UUID, auth: AuthManager, apiConnection: APIConnection? = nil) {
+        _store = StateObject(wrappedValue: ChatStore(accountID: accountID, auth: auth, apiConnection: apiConnection))
     }
 
     private var canSend: Bool {
         !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !store.selectedModel.isEmpty && store.storageReady && !auth.isBusy
-            && auth.activeAccount?.tokens?.permitsInference == true
+            && !store.selectedModel.isEmpty && store.storageReady && store.canUseConnection
     }
     private var modelName: String {
         store.models.first(where: { $0.slug == store.selectedModel })?.display_name
@@ -37,7 +37,7 @@ struct ChatWorkspaceView: View {
         ZStack {
             AmbientBackground()
             VStack(spacing: 0) {
-                if auth.activeAccount?.tokens?.permitsInference == false {
+                if !store.isAPIConnection, auth.activeAccount?.tokens?.permitsInference == false {
                     notice("请连接并允许使用 ChatGPT 套餐。", icon: "person.crop.circle.badge.exclamationmark") { sheet = .settings }
                 }
                 if let error = store.errorText {
@@ -51,6 +51,7 @@ struct ChatWorkspaceView: View {
         .sheet(item: $sheet, onDismiss: {
             if let intent = pendingConnection {
                 pendingConnection = nil
+                // A completed connection will select ChatGPT as the active service.
                 Task { await auth.connect(accountID: intent.accountID) }
             }
         }) { selected in
@@ -69,6 +70,11 @@ struct ChatWorkspaceView: View {
             }
         }
         .task { await store.loadModels() }
+        .onChange(of: auth.activeID) { _, id in
+            if id != nil, store.isAPIConnection {
+                do { try apiConnections.select(nil) } catch { store.errorText = error.localizedDescription }
+            }
+        }
         .onDisappear { store.stop() }
     }
 
@@ -81,7 +87,10 @@ struct ChatWorkspaceView: View {
                 Button { inputFocused = false; sheet = .models; TouchFeedback.tap() } label: {
                     HStack(spacing: 7) {
                         Image(systemName: "sparkle").foregroundStyle(Palette.accent)
-                        Text(modelName).font(.subheadline.weight(.semibold)).lineLimit(1)
+                        VStack(spacing: 2) {
+                            Text(modelName).font(.subheadline.weight(.semibold)).lineLimit(1)
+                            Text(store.connectionName).font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1)
+                        }
                         Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
                     }.padding(.horizontal, 17).frame(minHeight: 48)
                         .foregroundStyle(.primary).liquidSurface(radius: 24, interactive: true)
@@ -154,7 +163,7 @@ struct ChatWorkspaceView: View {
             }
             HStack(spacing: 9) {
                 Image(systemName: "lock.shield").foregroundStyle(Palette.accent)
-                Text("用自己的账户，保留自己的对话").foregroundStyle(.secondary)
+                Text(store.isAPIConnection ? "\(store.connectionName) · \(store.apiConnection?.host ?? "")" : "用自己的账户，保留自己的对话").foregroundStyle(.secondary)
             }.font(.caption).padding(.vertical, 8)
             VStack(spacing: 12) {
                 suggestion("lightbulb", "让灵感落地", "把脑海里的想法，变成可以开始的计划", "帮我把一个想法变成可执行的计划。请先问我这个想法是什么。")
@@ -200,7 +209,7 @@ struct ChatWorkspaceView: View {
                     }.liquidSurface(radius: 29)
                 }
             }
-            Text("ChatGPT 套餐 · 本机记录 · AI 回答可能有误")
+            Text(store.usageCaption)
                 .font(.system(size: 10)).foregroundStyle(.secondary).multilineTextAlignment(.center)
         }.buttonStyle(.plain).padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
     }

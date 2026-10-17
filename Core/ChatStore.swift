@@ -31,14 +31,20 @@ final class ChatStore: ObservableObject {
     @Published var errorText: String?
     private let accountID: UUID
     private let auth: AuthManager
+    let apiConnection: APIConnection?
     private var fileURL: URL?
     private var requestTask: Task<Void, Never>?
     private var generation: UUID?
     var selected: ChatThread? { threads.first { $0.id == selectedID } }
+    var isAPIConnection: Bool { apiConnection != nil }
+    var canUseConnection: Bool { isAPIConnection || (!auth.isBusy && auth.activeAccount?.tokens?.permitsInference == true) }
+    var connectionName: String { apiConnection?.name ?? "ChatGPT" }
+    var usageCaption: String { isAPIConnection ? "API 由服务商计费 · 本机记录 · AI 回答可能有误" : "ChatGPT 套餐 · 本机记录 · AI 回答可能有误" }
 
-    init(accountID: UUID, auth: AuthManager) {
+    init(accountID: UUID, auth: AuthManager, apiConnection: APIConnection? = nil) {
         self.accountID = accountID
         self.auth = auth
+        self.apiConnection = apiConnection
         do {
             var directory = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
                 .appendingPathComponent("LiaoChat/chats", isDirectory: true)
@@ -64,10 +70,28 @@ final class ChatStore: ObservableObject {
         } catch { errorText = "无法读取本机聊天记录，已暂停写入以保留原文件。请解锁设备后重新打开 App。" }
     }
 
-    func loadModels() async {
+    func loadModels(refresh: Bool = false) async {
         guard !isLoadingModels else { return }
         isLoadingModels = true
         defer { isLoadingModels = false }
+        if let connection = apiConnection {
+            var ids = connection.modelIDs
+            if refresh {
+                do {
+                    let remote = try await APIChatClient.models(connection: connection)
+                    try Task.checkCancellation()
+                    ids += remote.map(\.slug)
+                    errorText = nil
+                } catch is CancellationError { return }
+                catch { errorText = "未能获取模型列表，仍可使用手动配置的模型。\n" + error.localizedDescription }
+            }
+            var seen = Set<String>()
+            models = ids.filter { seen.insert($0).inserted }.map { ModelChoice(slug: $0, display_name: $0, visibility: nil) }
+            if !models.contains(where: { $0.slug == selectedModel }) {
+                selectedModel = models.first(where: { $0.slug == selected?.model })?.slug ?? models.first?.slug ?? ""
+            }
+            return
+        }
         do {
             let token = try await auth.accessToken(for: accountID)
             let available = try await ResponsesClient.models(token: token)
@@ -113,7 +137,7 @@ final class ChatStore: ObservableObject {
 
     @discardableResult func send(_ text: String) -> Bool {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !isSending, storageReady, !selectedModel.isEmpty,
+        guard !text.isEmpty, !isSending, storageReady, canUseConnection, !selectedModel.isEmpty,
               models.contains(where: { $0.slug == selectedModel }),
               let index = threads.firstIndex(where: { $0.id == selectedID }) else { return false }
         threads[index].messages.append(ChatMessage(role: .user, text: text))
@@ -122,7 +146,7 @@ final class ChatStore: ObservableObject {
         return true
     }
     func retry() {
-        guard !isSending, storageReady, !selectedModel.isEmpty, let index = threads.firstIndex(where: { $0.id == selectedID }),
+        guard !isSending, storageReady, canUseConnection, !selectedModel.isEmpty, let index = threads.firstIndex(where: { $0.id == selectedID }),
               let last = threads[index].messages.last, last.role == .assistant, last.status != .complete else { return }
         threads[index].messages.removeLast()
         startRequest(threadIndex: index)
@@ -149,13 +173,18 @@ final class ChatStore: ObservableObject {
                 if self.generation == runID { self.isSending = false; self.requestTask = nil; self.generation = nil; self.persist() }
             }
             do {
-                let token = try await self.auth.accessToken(for: self.accountID)
-                try Task.checkCancellation()
-                try await ResponsesClient.stream(token: token, model: model, history: history) { delta in
+                let onDelta: (String) -> Void = { delta in
                     guard self.generation == runID,
                           let i = self.threads.firstIndex(where: { $0.id == threadID }),
                           let j = self.threads[i].messages.firstIndex(where: { $0.id == response.id }) else { return }
                     self.threads[i].messages[j].text += delta
+                }
+                if let connection = self.apiConnection {
+                    try await APIChatClient.stream(connection: connection, model: model, history: history, onDelta: onDelta)
+                } else {
+                    let token = try await self.auth.accessToken(for: self.accountID)
+                    try Task.checkCancellation()
+                    try await ResponsesClient.stream(token: token, model: model, history: history, onDelta: onDelta)
                 }
                 try Task.checkCancellation()
                 self.mark(threadID, response.id, status: .complete)

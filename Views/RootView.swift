@@ -3,9 +3,13 @@ import SafariServices
 
 struct RootView: View {
     @EnvironmentObject private var auth: AuthManager
+    @EnvironmentObject private var apiConnections: APIConnections
     var body: some View {
         Group {
-            if let id = auth.activeID { ChatWorkspaceView(accountID: id, auth: auth).id(id) }
+            if let connection = apiConnections.active {
+                ChatWorkspaceView(accountID: connection.id, auth: auth, apiConnection: connection).id(connection.revision)
+            }
+            else if let id = auth.activeID { ChatWorkspaceView(accountID: id, auth: auth).id(id) }
             else { WelcomeView() }
         }
         .sheet(item: $auth.browser, onDismiss: { auth.browserDidDismiss() }) { item in
@@ -40,6 +44,8 @@ struct SafariBrowser: UIViewControllerRepresentable {
 
 struct WelcomeView: View {
     @EnvironmentObject private var auth: AuthManager
+    @EnvironmentObject private var apiConnections: APIConnections
+    @State private var showAPISettings = false
     @ScaledMetric(relativeTo: .largeTitle) private var titleSize: CGFloat = 38
     var body: some View {
         ZStack {
@@ -58,14 +64,14 @@ struct WelcomeView: View {
                             Text("好的想法，\n从对话开始。")
                                 .font(.system(size: titleSize, weight: .semibold, design: .rounded)).tracking(-1.3)
                                 .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
-                            Text("连接你的 ChatGPT，\n让灵感、问题和日常，都有回应。")
+                            Text("连接 ChatGPT 或自己的 AI API，\n让灵感、问题和日常，都有回应。")
                                 .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center).lineSpacing(6)
                         }
                     }.padding(.top, 30).padding(.bottom, 4)
                     VStack(alignment: .leading, spacing: 22) {
                         feature("sparkles", "使用自己的套餐", "符合条件的请求使用你授权的 ChatGPT 套餐。")
                         feature("bubble.left.and.text.bubble.right", "让每一段对话延续", "切换模型、保留上下文，随时接着聊。")
-                        feature("lock.shield", "记录保存在本机", "发送时才将所需对话上下文交给 OpenAI。")
+                        feature("lock.shield", "记录保存在本机", "发送时才将所需上下文交给当前 AI 服务。")
                     }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
                         .background(Palette.card.opacity(0.65), in: RoundedRectangle(cornerRadius: 28))
                     VStack(spacing: 14) {
@@ -80,6 +86,11 @@ struct WelcomeView: View {
                             .opacity(auth.isBusy || !auth.isReady ? 0.65 : 1)
                         Text(auth.isBusy ? auth.stage : "身份与套餐使用分别授权 · 不读取已有聊天记录")
                             .font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                        Button { showAPISettings = true } label: {
+                            Label("使用其他 AI API", systemImage: "server.rack")
+                                .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity).padding(18)
+                                .liquidSurface(radius: 27, interactive: true)
+                        }.buttonStyle(.plain).disabled(auth.isBusy)
                     }
                     if !auth.accounts.isEmpty {
                         VStack(alignment: .leading, spacing: 16) {
@@ -87,7 +98,10 @@ struct WelcomeView: View {
                             ForEach(auth.accounts) { account in
                                 Button {
                                     if account.tokens == nil { Task { await auth.connect(accountID: account.id) } }
-                                    else { auth.select(account.id) }
+                                    else {
+                                        do { try apiConnections.select(nil); auth.select(account.id) }
+                                        catch { auth.errorText = error.localizedDescription }
+                                    }
                                 } label: {
                                     HStack {
                                         Image(systemName: "person.crop.circle").font(.title2)
@@ -103,6 +117,7 @@ struct WelcomeView: View {
                 }.padding(.horizontal, 24).padding(.bottom, 28).frame(maxWidth: 540).frame(maxWidth: .infinity)
             }
         }
+        .sheet(isPresented: $showAPISettings) { NavigationStack { APISettingsView() } }
     }
     private func feature(_ icon: String, _ title: String, _ detail: String) -> some View {
         HStack(alignment: .top, spacing: 15) {

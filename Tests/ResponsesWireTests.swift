@@ -17,7 +17,7 @@ final class ResponsesWireTests: XCTestCase {
             XCTAssertEqual(actual, ["\u{FEFF}: 注释", "", "你好🙂\u{0085}\u{2028}\u{2029}", "", "末行"])
             if separator == "\n" {
                 var nativeEmptyLines = 0
-                for await line in bytes(input).lines where line.isEmpty { nativeEmptyLines += 1 }
+                for try await line in bytes(input).lines where line.isEmpty { nativeEmptyLines += 1 }
                 print("SSE framing probe: Foundation empty lines=\(nativeEmptyLines), preserved empty lines=\(actual.filter { $0.isEmpty }.count)")
             }
         }

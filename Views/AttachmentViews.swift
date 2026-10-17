@@ -73,7 +73,7 @@ struct ToolActivityRow: View {
         case "zip_files": return "打包文件"
         case "read_file": return "读取附件"
         case "read_webpage": return "读取网页"
-        case "web_search_call": return "联网搜索"
+        case "web_search_call", "search_web": return "联网搜索"
         case "code_interpreter_call": return "Python 分析"
         case "image_generation_call": return "生成图片"
         default: return activity.name
@@ -86,6 +86,22 @@ struct ToolActivityRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.caption.weight(.medium))
                 if !activity.detail.isEmpty { Text(activity.detail).font(.caption2).lineLimit(3) }
+                if let sources = activity.sources, !sources.isEmpty {
+                    DisclosureGroup("查看来源（\(sources.count)）") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            ForEach(sources) { source in
+                                if let url = WebSearchClient.resultURL(source.url) {
+                                    Link(destination: url) {
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text(source.title).font(.caption).lineLimit(2)
+                                            Text(url.host ?? source.url).font(.caption2).foregroundStyle(.secondary)
+                                        }
+                                    }.accessibilityLabel("打开来源：" + source.title)
+                                }
+                            }
+                        }.padding(.top, 6)
+                    }.font(.caption).tint(Palette.accent)
+                }
             }
         }.foregroundStyle(.secondary).accessibilityElement(children: .combine)
     }

@@ -16,19 +16,20 @@ struct ToolsSettingsView: View {
             Form {
                 Section {
                     Toggle("允许模型使用工具", isOn: setting(\.enabled))
+                    Toggle("公开网页搜索", isOn: setting(\.allowsPublicSearch)).disabled(!store.toolSettings.enabled)
                     Label("计算、读取当前对话附件、生成文件", systemImage: "iphone")
                     Label("读取公开网页（每次确认）", systemImage: "globe")
                 } header: { Text("本次对话") } footer: {
-                    Text("本地工具不访问其他对话。长文先发送前 12000 字符，后续通过工具分段读取；关闭工具后无法继续读取余文。生成期间设置锁定，MCP 连接变更对下一次请求生效。")
+                    Text("公开搜索默认开启，无需 API Key，适用于 ChatGPT 登录和其他 AI 连接。只把搜索词发送给 DuckDuckGo，必要时改用 Bing；不发送聊天记录、附件或模型密钥。公开服务可能受网络或验证码限制；时间筛选仍需核实原文日期。本地工具只读取当前对话附件，长文可分段读取。")
                 }.disabled(store.isSending)
                 Section {
-                    Toggle("联网搜索", isOn: setting(\.webSearch))
+                    Toggle("OpenAI 内置搜索", isOn: setting(\.webSearch))
                     Toggle("Python 与数据分析", isOn: setting(\.codeInterpreter))
                     Toggle("图片生成", isOn: setting(\.imageGeneration))
                 } header: { Text("OpenAI 云端工具") } footer: {
                     Text(store.canUseHostedTools
-                        ? "仅通过当前 OpenAI API 连接使用，按服务商规则另行计费。Python 开启后会把当前对话附件上传至 OpenAI 文件服务及容器，上传文件设置 1 小时过期。用量和可用性以账户权限为准。"
-                        : "需要官方 OpenAI API 的 Responses 协议连接。当前连接可使用本地工具及配置好的 MCP；不会自动切换到付费 API。")
+                        ? "仅通过当前 OpenAI API 连接使用，按服务商规则另行计费。开启内置搜索时优先使用它。Python 会上传当前对话附件至文件服务及容器，上传文件设置 1 小时过期。"
+                        : "本区需要官方 OpenAI API 的 Responses 协议连接。上方公开网页搜索可在当前连接使用，也可连接搜索 MCP；不会自动切换到付费 API。")
                 }.disabled(!store.canUseHostedTools || store.isSending || !store.toolSettings.enabled)
                 Section {
                     if !connections.ready {

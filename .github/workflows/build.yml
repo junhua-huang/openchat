@@ -31,6 +31,10 @@ jobs:
           path: build/ReleaseCheck.xcresult
           if-no-files-found: ignore
           retention-days: 7
+      - name: Check live public search availability
+        continue-on-error: true
+        timeout-minutes: 4
+        run: python3 Scripts/check_search.py
   simulator:
     runs-on: macos-latest
     timeout-minutes: 30

@@ -66,7 +66,7 @@ common = {"IPHONEOS_DEPLOYMENT_TARGET": "17.0", "SWIFT_VERSION": "5.0", "SDKROOT
           "TARGETED_DEVICE_FAMILY": "1,2", "CODE_SIGN_STYLE": "Automatic", "DEVELOPMENT_TEAM": "",
           "SUPPORTED_PLATFORMS": "iphoneos iphonesimulator", "SUPPORTS_MACCATALYST": "NO"}
 app_settings = dict(common, PRODUCT_BUNDLE_IDENTIFIER="com.example.LiaoChat", PRODUCT_NAME="$(TARGET_NAME)",
-                    INFOPLIST_FILE="App/Info.plist", GENERATE_INFOPLIST_FILE="NO", MARKETING_VERSION="2.0.0",
+                    INFOPLIST_FILE="App/Info.plist", GENERATE_INFOPLIST_FILE="NO", MARKETING_VERSION="2.0.1",
                     CURRENT_PROJECT_VERSION="1", OTHER_LDFLAGS="$(inherited) -lz", ASSETCATALOG_COMPILER_APPICON_NAME="AppIcon",
                     LD_RUNPATH_SEARCH_PATHS="$(inherited) @executable_path/Frameworks")
 test_settings = dict(common, PRODUCT_BUNDLE_IDENTIFIER="com.example.LiaoChatTests", PRODUCT_NAME="$(TARGET_NAME)",

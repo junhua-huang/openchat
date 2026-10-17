@@ -47,6 +47,12 @@ struct ChatAttachment: Codable, Identifiable, Equatable {
 
 struct ToolSettings: Codable, Equatable {
     var enabled = true
+    // Optional so a 2.0 archive continues to decode with search enabled.
+    var publicSearch: Bool?
+    var allowsPublicSearch: Bool {
+        get { publicSearch ?? true }
+        set { publicSearch = newValue }
+    }
     var webSearch = false
     var codeInterpreter = false
     var imageGeneration = false
@@ -57,6 +63,7 @@ struct ToolActivity: Codable, Identifiable, Equatable {
     var name: String
     var state: String = "running"
     var detail: String = ""
+    var sources: [WebSearchResult]?
 }
 
 struct ToolCall: Equatable {

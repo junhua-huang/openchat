@@ -1,9 +1,9 @@
-# 2.0 工具、MCP 与文件
+# 2.0.1 工具、MCP 与文件
 
 ## 在手机上使用
 
 1. 输入框左下角“＋”可以选择照片或从“文件”导入。每条消息最多 4 个附件，每个不超过 10 MB；可直接发送附件，让模型分析。
-2. 点击“＋ → 工具与 MCP”或右上角更多菜单，管理本次对话的工具。默认启用本地工具，云端收费工具默认关闭。
+2. 点击“＋ → 工具与 MCP”或右上角更多菜单，管理本次对话的工具。本地工具和公开网页搜索默认启用，云端收费工具默认关闭。
 3. 请求“把这段内容生成 Word / PDF / Excel”等。支持工具的模型可以创建真实附件；点击卡片预览，使用分享按钮“存储到文件”或发给其他应用。
 4. 模型需要读取网站或调用 MCP 时，聊天底部出现“等待确认”。打开后查看具体工具和参数，允许一次或拒绝。切换历史时，等待确认的对话显示手掌标记；停止生成会取消本机等待。
 
@@ -16,9 +16,20 @@
 | 计算、读取附件、生成文件和打包 | 需要模型支持函数调用 | 支持函数调用的模型 | 需要服务商支持函数调用 |
 | MCP 远程工具 | 手动添加服务器，逐次确认 | 手动添加服务器，逐次确认 | 手动添加服务器，逐次确认 |
 | 读取指定 HTTPS 网页 | 每次确认，无登录信息 | 每次确认，无登录信息 | 每次确认，无登录信息 |
+| 按关键词搜索公开网络 | 默认开启，无需搜索 API Key | 公开搜索；开启 OpenAI 内置搜索时优先使用内置搜索 | 默认开启，需要模型支持函数调用 |
 | 内置联网搜索、Python、图片生成 | 本版不发送这些云端工具 | 在工具设置中按需开启，服务商独立计费 | 不自动套用 OpenAI 的云端工具参数 |
 
 API 连接可选择 Chat Completions 或 Responses。自动模式在官方 `api.openai.com` 使用 Responses，其他地址使用 Chat Completions。GPT-6.1 Sol / Astra 的工具调用需要 Responses。工具不支持时会保留已收到的内容并报告错误，不会偷偷换模型、改用另一份密钥或转到收费连接；也可在工具设置关闭工具，继续普通聊天。
+
+## 关键词搜索
+
+2.0.1 增加设备执行的 `search_web` 函数工具，支持 ChatGPT 登录模式。可以直接提问“今日 AI 新闻”，不再要求先给网址。模型仍须支持工具调用。
+
+默认请求 DuckDuckGo 的公开 HTML 搜索，必要时改用 Bing RSS。只发送搜索词和时间筛选，不附带 AI Token、聊天 JSON 或附件文件；不使用 ChatGPT 网站内部接口。它们是公开搜索页面，不是有稳定性保证的付费搜索 API。网络限制、验证码、页面结构变化或服务限流会导致失败；失败会交回模型明确说明，不使用缓存旧结果冒充实时检索。
+
+支持最近一天、一周、一月和不限时间，单次最多 8 条。模型获得手机本地日期与时区、来源标题、真实链接、摘要和时间筛选是否生效。Bing RSS 回退不声称已应用日期筛选。筛选和摘要都不能证明新闻发表于今天，仍须读取原文核对日期。工具状态中可展开真实来源并打开原文；来源随回复版本保存。正文读取仍逐次确认 URL。
+
+公开搜索可在“工具与 MCP”中关闭；主工具开关关闭时也不会提供搜索。旧版本存档升级后保持可读，公开搜索默认开启。开启官方 OpenAI API 内置搜索时不再同时提供公开搜索工具，避免重复检索。
 
 ## 文件处理与边界
 
@@ -36,7 +47,7 @@ API 连接可选择 Chat Completions 或 Responses。自动模式在官方 `api.
 
 ## Python 文件分析与云端费用
 
-Python、联网搜索和图片生成仅在官方 OpenAI API 的 Responses 连接中提供独立开关，默认关闭；并不包含在本机文件导入内。费用、模型支持和权限由你的 API 账户决定。
+Python、OpenAI 内置搜索和图片生成仅在官方 OpenAI API 的 Responses 连接中提供独立开关，默认关闭；公开网页搜索不要求该 API 连接。云端费用、模型支持和权限由你的 API 账户决定。
 
 开启 Python 后，当前对话附件及本轮新建文件会上传至 OpenAI 文件服务并传给分析容器，最多 8 个不同文件。上传文件设置创建后 1 小时过期；容器本身按服务商的保留、计费和过期规则处理。App 使用原始文件，因此 Python 可以处理 PDF、表格和图片，而不只看到本机提取的节选。模型引用的生成文件在响应完成后下载至本机，避免只展示过期的容器链接。
 
@@ -58,9 +69,12 @@ MCP 凭据保存在设备钥匙串，不进入模型工具定义、聊天 JSON �
 
 测试使用合成文件、模拟模型响应与 URLProtocol MCP 服务器，不发起付费推理，也不持有你的 API 密钥。真实 ChatGPT 工具权限、外部服务器、图片/容器服务和真机交互仍需更新后验收。
 
+搜索新增合成测试覆盖中文参数、实体解码、包装链接、去重、异常页面、公开搜索回退、取消、旧设置兼容、来源版本保存及 ChatGPT 模式工具回传。`Scripts/check_search.py` 使用实际 Foundation 客户端进行不带 AI 凭据的公开网络探测；其结果独立于稳定的单元测试，具体可用性以当次运行和设备网络为准。
+
 - [OpenAI Function calling](https://developers.openai.com/api/docs/guides/function-calling)
 - [OpenAI File inputs](https://developers.openai.com/api/docs/guides/file-inputs)
 - [OpenAI Code Interpreter](https://developers.openai.com/api/docs/guides/tools-code-interpreter)
 - [OpenAI Image generation](https://developers.openai.com/api/docs/guides/tools-image-generation)
+- [DuckDuckGo 非 JavaScript 搜索](https://duckduckgo.com/duckduckgo-help-pages/features/non-javascript/)
 - [MCP Streamable HTTP](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports)
 - [MCP Lifecycle](https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle)

@@ -1,7 +1,7 @@
 import Foundation
 import Combine
 
-typealias ChatTransport = @MainActor (_ model: String, _ history: [ChatMessage],
+typealias ChatTransport = @MainActor (_ model: String, _ history: [ChatMessage], _ effort: ReasoningEffort,
                                      _ onDelta: @escaping (String) -> Void) async throws -> Void
 
 @MainActor
@@ -9,7 +9,7 @@ final class ChatStore: ObservableObject {
     @Published private(set) var threads: [ChatThread] = []
     @Published var selectedID: UUID?
     @Published private(set) var models: [ModelChoice] = []
-    @Published var selectedModel = ""
+    @Published private(set) var selectedModel = ""
     @Published private(set) var generatingThreadIDs: Set<UUID> = []
     @Published private(set) var isLoadingModels = false
     @Published private(set) var storageReady = false
@@ -31,6 +31,12 @@ final class ChatStore: ObservableObject {
     var canUseConnection: Bool { isAPIConnection || (!auth.isBusy && auth.activeAccount?.tokens?.permitsInference == true) }
     var connectionName: String { apiConnection?.name ?? "ChatGPT" }
     var usageCaption: String { isAPIConnection ? "API 由服务商计费 · 对话保存在本机" : "ChatGPT 套餐 · 对话保存在本机" }
+    var effortOptions: [ReasoningEffort] { ReasoningSupport.options(model: selectedModel, connection: apiConnection) }
+    var selectedEffort: ReasoningEffort {
+        guard let raw = selected?.reasoningEfforts?[selectedModel], let effort = ReasoningEffort(rawValue: raw),
+              effortOptions.contains(effort) else { return .automatic }
+        return effort
+    }
 
     init(accountID: UUID, auth: AuthManager, apiConnection: APIConnection? = nil,
          storageDirectory: URL? = nil, transport: ChatTransport? = nil) {
@@ -85,19 +91,36 @@ final class ChatStore: ObservableObject {
         if !models.contains(where: { $0.slug == selectedModel }) {
             selectedModel = models.first(where: { $0.slug == selected?.model })?.slug ?? models.first?.slug ?? ""
         }
+        if let i = threads.firstIndex(where: { $0.id == selectedID }) { threads[i].model = selectedModel; persist() }
+    }
+    func selectModel(_ model: String) {
+        guard !isSending, storageReady, models.contains(where: { $0.slug == model }),
+              let i = threads.firstIndex(where: { $0.id == selectedID }) else { return }
+        selectedModel = model; threads[i].model = model; persist()
+    }
+    func selectEffort(_ effort: ReasoningEffort) {
+        guard !isSending, storageReady, effort == .automatic || effortOptions.contains(effort),
+              let i = threads.firstIndex(where: { $0.id == selectedID }) else { return }
+        var choices = threads[i].reasoningEfforts ?? [:]
+        if effort == .automatic { choices.removeValue(forKey: selectedModel) }
+        else { choices[selectedModel] = effort.rawValue }
+        threads[i].reasoningEfforts = choices.isEmpty ? nil : choices
+        persist()
     }
     func newThread() {
         guard storageReady else { return }
+        let choices = selected?.reasoningEfforts
         if let index = threads.firstIndex(where: { $0.messages.isEmpty && ($0.draft ?? "").isEmpty }) {
-            selectedID = threads[index].id; threads[index].model = selectedModel; persist(); return
+            selectedID = threads[index].id; threads[index].model = selectedModel
+            threads[index].reasoningEfforts = choices; persist(); return
         }
-        let thread = ChatThread(model: selectedModel)
+        let thread = ChatThread(model: selectedModel, reasoningEfforts: choices)
         threads.insert(thread, at: 0); selectedID = thread.id; persist()
     }
     func select(_ thread: ChatThread) {
-        guard threads.contains(where: { $0.id == thread.id }) else { return }
+        guard let current = threads.first(where: { $0.id == thread.id }) else { return }
         selectedID = thread.id
-        if models.contains(where: { $0.slug == thread.model }) { selectedModel = thread.model }
+        selectedModel = models.first(where: { $0.slug == current.model })?.slug ?? models.first?.slug ?? ""
         persist()
     }
     func updateDraft(_ text: String) {
@@ -118,7 +141,9 @@ final class ChatStore: ObservableObject {
         for id in ids { stop(threadID: id) }
         threads.removeAll { ids.contains($0.id) }
         if let selectedID = selectedID, ids.contains(selectedID) { self.selectedID = threads.first?.id }
-        if threads.isEmpty { newThread() } else { persist() }
+        if threads.isEmpty { newThread() }
+        else if let selected = selected { select(selected) }
+        else { persist() }
     }
     func clearHistory() { delete(Set(threads.map(\.id))) }
     func rename(_ id: UUID, to title: String) {
@@ -143,7 +168,8 @@ final class ChatStore: ObservableObject {
     func retry() {
         guard !isSending, canStart, let index = threads.firstIndex(where: { $0.id == selectedID }),
               var last = threads[index].messages.last, last.role == .assistant else { return }
-        threads[index].messages.removeLast(); last.beginRegeneration(model: selectedModel)
+        threads[index].messages.removeLast()
+        last.beginRegeneration(model: selectedModel, reasoningEffort: selectedEffort == .automatic ? nil : selectedEffort.rawValue)
         startRequest(threadIndex: index, response: last)
     }
     @discardableResult func editAndSend(_ messageID: UUID, text: String) -> Bool {
@@ -158,8 +184,9 @@ final class ChatStore: ObservableObject {
     }
     private func startRequest(threadIndex index: Int, response existing: ChatMessage? = nil) {
         let history = threads[index].messages
-        let response = existing ?? ChatMessage(role: .assistant, text: "", status: .streaming, model: selectedModel)
-        let threadID = threads[index].id; let model = selectedModel
+        let threadID = threads[index].id; let model = selectedModel; let effort = selectedEffort
+        let response = existing ?? ChatMessage(role: .assistant, text: "", status: .streaming, model: model,
+                                               reasoningEffort: effort == .automatic ? nil : effort.rawValue)
         threads[index].model = model; threads[index].updated = Date()
         threads[index].messages.append(response); errorText = nil
         guard persist() else { mark(threadID, response.id, status: .failed, problem: "保存失败，未发送请求"); return }
@@ -170,12 +197,12 @@ final class ChatStore: ObservableObject {
             defer { if self.runs[threadID] == runID { self.cleanup(threadID); self.persist() } }
             do {
                 let onDelta: (String) -> Void = { [weak self] delta in self?.buffer(delta, threadID: threadID, runID: runID) }
-                if let transport = self.transport { try await transport(model, history, onDelta) }
+                if let transport = self.transport { try await transport(model, history, effort, onDelta) }
                 else if let connection = self.apiConnection {
-                    try await APIChatClient.stream(connection: connection, model: model, history: history, onDelta: onDelta)
+                    try await APIChatClient.stream(connection: connection, model: model, history: history, effort: effort, onDelta: onDelta)
                 } else {
                     let token = try await self.auth.accessToken(for: self.accountID); try Task.checkCancellation()
-                    try await ResponsesClient.stream(token: token, model: model, history: history, onDelta: onDelta)
+                    try await ResponsesClient.stream(token: token, model: model, history: history, effort: effort, onDelta: onDelta)
                 }
                 guard self.runs[threadID] == runID else { return }
                 try Task.checkCancellation(); self.flush(threadID)

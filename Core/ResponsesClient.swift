@@ -17,22 +17,26 @@ enum ResponsesClient {
         return try JSONDecoder().decode(Catalog.self, from: data).models.filter { $0.visibility == "list" }
     }
 
-    static func request(token: String, model: String, history: [ChatMessage]) throws -> URLRequest {
+    static func request(token: String, model: String, history: [ChatMessage], effort: ReasoningEffort = .automatic) throws -> URLRequest {
+        try ReasoningSupport.validate(effort, model: model)
         var request = URLRequest(url: URL(string: "https://api.openai.com/v1/responses")!)
         request.httpMethod = "POST"
         request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-        request.httpBody = try JSONSerialization.data(withJSONObject: [
+        var body: [String: Any] = [
             "model": model, "store": false, "stream": true,
             "input": history.filter { $0.status == .complete }.map { ["role": $0.role.rawValue, "content": $0.text] }
-        ])
+        ]
+        if effort != .automatic { body["reasoning"] = ["effort": effort.rawValue] }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
         return request
     }
 
     @MainActor
-    static func stream(token: String, model: String, history: [ChatMessage], onDelta: (String) -> Void) async throws {
-        let request = try request(token: token, model: model, history: history)
+    static func stream(token: String, model: String, history: [ChatMessage], effort: ReasoningEffort = .automatic,
+                       onDelta: (String) -> Void) async throws {
+        let request = try request(token: token, model: model, history: history, effort: effort)
         let (bytes, response) = try await HTTP.session.bytes(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw ResponseFailure.make(response: nil, shape: "non_http")

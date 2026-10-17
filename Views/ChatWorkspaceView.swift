@@ -69,7 +69,7 @@ struct ChatWorkspaceView: View {
                     store.select(thread); followOutput = true; sheet = nil
                 }, onNew: { store.newThread(); followOutput = true; sheet = nil })
             case .models:
-                ModelPickerView(store: store) { slug in store.selectedModel = slug; TouchFeedback.tap(); sheet = nil }
+                ModelPickerView(store: store) { slug in store.selectModel(slug); TouchFeedback.tap() }
             case .settings:
                 AccountView(store: store) { id in
                     pendingConnection = ConnectIntent(accountID: id)
@@ -101,11 +101,16 @@ struct ChatWorkspaceView: View {
                     .accessibilityLabel("历史对话")
                 Button { inputFocused = false; sheet = .models; TouchFeedback.tap() } label: {
                     HStack(spacing: 6) {
-                        Text(modelName).font(.subheadline.weight(.semibold)).lineLimit(1)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(modelName).font(.subheadline.weight(.semibold)).lineLimit(1)
+                            if !store.effortOptions.isEmpty {
+                                Text("思考 · " + store.selectedEffort.title).font(.caption2).foregroundStyle(.secondary)
+                            }
+                        }
                         Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
                     }.padding(.horizontal, 12).frame(minHeight: 48)
                         .foregroundStyle(.primary).liquidSurface(radius: 24, interactive: true)
-                }.disabled(store.isSending).accessibilityLabel("选择模型，当前为 \(modelName)").layoutPriority(1)
+                }.disabled(store.isSending).accessibilityLabel("选择模型与推理强度，当前为 \(modelName)，\(store.selectedEffort.title)").layoutPriority(1)
                 Spacer(minLength: 0)
                 Button { store.newThread(); followOutput = true; inputFocused = true; TouchFeedback.tap() } label: {
                     LiquidIcon(name: "square.and.pencil")

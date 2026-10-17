@@ -16,6 +16,21 @@ struct ModelPickerView: View {
                 else {
                     List {
                         Section {
+                            if !store.effortOptions.isEmpty {
+                                Picker("推理强度", selection: Binding(get: { store.selectedEffort }, set: { store.selectEffort($0) })) {
+                                    ForEach([ReasoningEffort.automatic] + store.effortOptions) { effort in
+                                        Text(effort.title).tag(effort)
+                                    }
+                                }.disabled(store.isSending)
+                            } else {
+                                LabeledContent("推理强度", value: "默认")
+                            }
+                        } header: { Text("当前模型的思考设置") } footer: {
+                            Text(store.effortOptions.isEmpty
+                                ? "此模型或连接暂未开放强度调整，使用服务商默认设置。"
+                                : "默认由模型决定。更高强度通常需要更多时间与用量。选择按对话和模型保存，对下一次发送或重新生成生效。")
+                        }.listRowBackground(Palette.card.opacity(0.75))
+                        Section {
                             ForEach(filtered) { model in
                                 Button { onSelect(model.slug) } label: {
                                     HStack(spacing: 14) {
@@ -48,8 +63,8 @@ struct ModelPickerView: View {
                 }
             }
             .searchable(text: $query, prompt: "搜索模型")
-            .navigationTitle("选择模型").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("模型与推理强度").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完成") { dismiss() } } }
-        }.presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+        }.presentationDetents([.large]).presentationDragIndicator(.visible)
     }
 }

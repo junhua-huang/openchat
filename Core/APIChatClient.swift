@@ -48,21 +48,25 @@ enum APIChatClient {
             .sorted { $0.slug < $1.slug }
     }
 
-    static func chatRequest(connection: APIConnection, model: String, history: [ChatMessage]) throws -> URLRequest {
+    static func chatRequest(connection: APIConnection, model: String, history: [ChatMessage], effort: ReasoningEffort = .automatic) throws -> URLRequest {
+        try ReasoningSupport.validate(effort, model: model, connection: connection)
         var request = try request(connection: connection, path: "chat/completions")
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-        request.httpBody = try JSONSerialization.data(withJSONObject: [
+        var body: [String: Any] = [
             "model": model, "stream": true,
             "messages": history.filter { $0.status == .complete }.map { ["role": $0.role.rawValue, "content": $0.text] }
-        ])
+        ]
+        if effort != .automatic { body["reasoning_effort"] = effort.rawValue }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
         return request
     }
 
     @MainActor
-    static func stream(connection: APIConnection, model: String, history: [ChatMessage], onDelta: (String) -> Void) async throws {
-        let request = try chatRequest(connection: connection, model: model, history: history)
+    static func stream(connection: APIConnection, model: String, history: [ChatMessage], effort: ReasoningEffort = .automatic,
+                       onDelta: (String) -> Void) async throws {
+        let request = try chatRequest(connection: connection, model: model, history: history, effort: effort)
         let (bytes, response) = try await session.bytes(for: request)
         try check(response)
         guard (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type")?.lowercased().contains("text/event-stream") == true else {

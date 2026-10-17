@@ -7,6 +7,7 @@ struct ReplyVersion: Codable, Identifiable, Equatable {
     var problem: String?
     var diagnostic: String?
     var model: String?
+    var reasoningEffort: String?
 }
 
 struct ChatMessage: Codable, Identifiable, Equatable {
@@ -19,22 +20,24 @@ struct ChatMessage: Codable, Identifiable, Equatable {
     var problem: String?
     var diagnostic: String?
     var model: String?
+    var reasoningEffort: String?
     var versions: [ReplyVersion]?
     var versionIndex: Int?
     var versionCount: Int { versions?.count ?? 1 }
     var activeVersion: Int { versionIndex ?? 0 }
     private var snapshot: ReplyVersion {
-        ReplyVersion(text: text, status: status, problem: problem, diagnostic: diagnostic, model: model)
+        ReplyVersion(text: text, status: status, problem: problem, diagnostic: diagnostic, model: model, reasoningEffort: reasoningEffort)
     }
     mutating func recordVersion() {
         guard let index = versionIndex, versions?.indices.contains(index) == true else { return }
         let version = snapshot
         versions?[index] = version
     }
-    mutating func beginRegeneration(model: String) {
+    mutating func beginRegeneration(model: String, reasoningEffort: String? = nil) {
         recordVersion()
         if versions == nil { versions = [snapshot] }
         text = ""; status = .streaming; problem = nil; diagnostic = nil; self.model = model
+        self.reasoningEffort = reasoningEffort
         versionIndex = versions?.count ?? 0
         let version = snapshot
         versions?.append(version)
@@ -46,6 +49,7 @@ struct ChatMessage: Codable, Identifiable, Equatable {
         guard let version = self.versions?[index] else { return false }
         text = version.text; status = version.status; problem = version.problem
         diagnostic = version.diagnostic; model = version.model; versionIndex = index
+        reasoningEffort = version.reasoningEffort
         return true
     }
 }
@@ -59,13 +63,15 @@ struct ChatThread: Codable, Identifiable {
     var draft: String?
     var isPinned: Bool?
     var parentID: UUID?
+    // Stored as strings so an unknown future value cannot invalidate an archive.
+    var reasoningEfforts: [String: String]?
 
     func editing(_ messageID: UUID, text: String) -> ChatThread? {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, let index = messages.firstIndex(where: { $0.id == messageID }),
               messages[index].role == .user else { return nil }
         var branch = ChatThread(title: String(text.prefix(28)), model: model,
-                                messages: Array(messages.prefix(index)), parentID: id)
+                                messages: Array(messages.prefix(index)), parentID: id, reasoningEfforts: reasoningEfforts)
         branch.messages.append(ChatMessage(role: .user, text: text))
         return branch
     }

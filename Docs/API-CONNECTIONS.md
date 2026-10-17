@@ -24,6 +24,7 @@
 
 - `GET <base>/models`：解析 `{"data":[{"id":"model-id"}]}`。列表为空或接口不支持时可直接手动填写模型 ID。
 - `POST <base>/chat/completions`：发送 `model`、`stream:true` 和本次对话中已完成的 `messages`。
+- 1.0.1 在官方 OpenAI API 的已核实模型上支持 `reasoning_effort`。其他服务商保留默认强度，具体范围见 [推理强度](REASONING.md)。
 - 读取 SSE 的 `choices[0].delta.content` 或 `refusal`。`finish_reason=stop` 视为完成；`length`、`content_filter` 和工具调用保留已有输出并标记未正常完成。
 - 只返回 `[DONE]` 而不提供完成状态、非 SSE 或不兼容的 JSON 不会被误标为完整回复。
 - 暂不支持 Anthropic 原生 Messages、Gemini 原生协议、Azure 的专用 API Key／版本参数、图片、音频、文件、工具调用或思考过程展示。有 OpenAI 兼容端点的服务可使用兼容地址。

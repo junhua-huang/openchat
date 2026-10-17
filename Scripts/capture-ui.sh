@@ -17,3 +17,7 @@ xcrun simctl terminate "$capture_device_id" com.example.LiaoChat || true
 xcrun simctl launch "$capture_device_id" com.example.LiaoChat --ui-preview --ui-empty
 sleep 4
 xcrun simctl io "$capture_device_id" screenshot build/ui/empty-light.png
+xcrun simctl terminate "$capture_device_id" com.example.LiaoChat || true
+xcrun simctl launch "$capture_device_id" com.example.LiaoChat --ui-preview --ui-models
+sleep 4
+xcrun simctl io "$capture_device_id" screenshot build/ui/model-effort-light.png

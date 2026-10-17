@@ -5,11 +5,15 @@ import SwiftUI
 struct WorkspacePreview: View {
     @StateObject private var store: ChatStore
     init(auth: AuthManager) { _store = StateObject(wrappedValue: Self.makeStore(auth: auth)) }
-    var body: some View { ChatWorkspaceView(store: store) }
+    var body: some View {
+        if ProcessInfo.processInfo.arguments.contains("--ui-models") {
+            ModelPickerView(store: store) { store.selectModel($0) }.task { await store.loadModels() }
+        } else { ChatWorkspaceView(store: store) }
+    }
     @MainActor private static func makeStore(auth: AuthManager) -> ChatStore {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("OpenChat-UI-" + UUID().uuidString)
-        let connection = APIConnection(name: "ChatGPT", baseURL: "https://example.com/v1", apiKey: "synthetic-preview",
-                                       modelIDs: ["GPT-6.1-Sol"])
+        let connection = APIConnection(name: "OpenAI API", baseURL: "https://api.openai.com/v1", apiKey: "synthetic-preview",
+                                       modelIDs: ["gpt-6.1-sol"])
         let ticks = String(repeating: "\u{0060}", count: 3)
         let answer = """
         ## 让想法变成一个小作品
@@ -32,17 +36,17 @@ struct WorkspacePreview: View {
         \(ticks)
         """
         let empty = ProcessInfo.processInfo.arguments.contains("--ui-empty")
-        let thread = ChatThread(title: empty ? "新对话" : "从想法到作品", model: "GPT-6.1-Sol",
+        let thread = ChatThread(title: empty ? "新对话" : "从想法到作品", model: "gpt-6.1-sol",
             messages: empty ? [] : [ChatMessage(role: .user, text: "怎样把一个想法变成作品？"),
                                    ChatMessage(role: .assistant, text: answer)],
-            draft: empty ? nil : "帮我把第二步展开讲讲")
+            draft: empty ? nil : "帮我把第二步展开讲讲", reasoningEfforts: ["gpt-6.1-sol": "high"])
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             try JSONEncoder().encode(ChatArchive(threads: [thread], selectedID: thread.id))
                 .write(to: directory.appendingPathComponent(connection.id.uuidString + ".json"))
         } catch { assertionFailure("Unable to prepare synthetic UI fixture") }
         return ChatStore(accountID: connection.id, auth: auth, apiConnection: connection,
-                         storageDirectory: directory, transport: { _, _, delta in delta("这是本地界面预览。") })
+                         storageDirectory: directory, transport: { _, _, _, delta in delta("这是本地界面预览。") })
     }
 }
 #endif

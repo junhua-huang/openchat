@@ -12,7 +12,8 @@ struct HistoryView: View {
 
     private var results: [ChatThread] {
         store.threads.filter { thread in
-            !thread.messages.isEmpty && (query.isEmpty || thread.title.localizedStandardContains(query)
+            (!thread.messages.isEmpty || !(thread.draft ?? "").isEmpty) && (query.isEmpty || thread.title.localizedStandardContains(query)
+                || (thread.draft ?? "").localizedStandardContains(query)
                 || thread.messages.contains { $0.text.localizedStandardContains(query) })
         }.sorted { $0.updated > $1.updated }
     }
@@ -85,7 +86,7 @@ struct HistoryView: View {
             Image(systemName: thread.id == store.selectedID ? "bubble.left.fill" : "bubble.left")
                 .foregroundStyle(thread.id == store.selectedID ? Palette.accent : .secondary).frame(width: 23)
             VStack(alignment: .leading, spacing: 6) {
-                Text(thread.title).font(.subheadline.weight(.medium)).foregroundStyle(.primary).lineLimit(1)
+                Text(thread.messages.isEmpty ? "未发送的草稿" : thread.title).font(.subheadline.weight(.medium)).foregroundStyle(.primary).lineLimit(1)
                 Text(preview(thread))
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
@@ -100,6 +101,7 @@ struct HistoryView: View {
             .accessibilityValue(thread.id == store.selectedID ? "当前对话" : "")
     }
     private func preview(_ thread: ChatThread) -> String {
+        if let draft = thread.draft, !draft.isEmpty { return "草稿：" + draft.replacingOccurrences(of: "\n", with: " ") }
         if !query.isEmpty, let match = thread.messages.first(where: { $0.text.localizedStandardContains(query) }) {
             return match.text.replacingOccurrences(of: "\n", with: " ")
         }

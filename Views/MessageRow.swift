@@ -53,6 +53,7 @@ struct MessageRow: View, Equatable {
             if message.role == .assistant { Spacer(minLength: 0) }
         }
         .onChange(of: message.text) { _, _ in copied = false; copiedDiagnostic = false }
+        .onChange(of: message.diagnostic) { _, _ in copiedDiagnostic = false }
     }
     private var actions: some View {
         HStack(spacing: 2) {

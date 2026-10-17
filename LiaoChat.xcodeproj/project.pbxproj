@@ -1,0 +1,472 @@
+// !$*UTF8*$!
+{
+	"archiveVersion" = 1;
+	"classes" = {
+
+	};
+	"objectVersion" = 56;
+	"objects" = {
+		"F19AC972E9AFB2BDC07BB431" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "App/LiaoChatApp.swift";
+			"sourceTree" = "<group>";
+		};
+		"949474F5163E49B5DE97E7E6" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Core/AuthManager.swift";
+			"sourceTree" = "<group>";
+		};
+		"E808886452383744148F86BE" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Core/ChatStore.swift";
+			"sourceTree" = "<group>";
+		};
+		"00D466EE6168E435EFFA5456" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Core/IdentityVerifier.swift";
+			"sourceTree" = "<group>";
+		};
+		"758CF0A4B089A4C89FA6F802" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Core/LoopbackServer.swift";
+			"sourceTree" = "<group>";
+		};
+		"30FCE3CE4E4929114BFB38D0" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Core/MessageContent.swift";
+			"sourceTree" = "<group>";
+		};
+		"4C201DC5DB5240DA0BB71162" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Core/ResponsesClient.swift";
+			"sourceTree" = "<group>";
+		};
+		"3E4D53FBD4C7BCFECFE31F16" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Core/Support.swift";
+			"sourceTree" = "<group>";
+		};
+		"2962AB97368A1A865CC39898" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Views/AccountView.swift";
+			"sourceTree" = "<group>";
+		};
+		"7A3FF1A6729400F78F12FFF3" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Views/ChatWorkspaceView.swift";
+			"sourceTree" = "<group>";
+		};
+		"07D42F73A5C6AA2C77FC5416" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Views/HistoryView.swift";
+			"sourceTree" = "<group>";
+		};
+		"33F36FB735E4FE0B9D276CD3" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Views/LiquidTheme.swift";
+			"sourceTree" = "<group>";
+		};
+		"63BB994D8A6C445F83C7D739" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Views/MessageRow.swift";
+			"sourceTree" = "<group>";
+		};
+		"BD5A5D1BA82C144F1BF125D2" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Views/ModelPickerView.swift";
+			"sourceTree" = "<group>";
+		};
+		"73BCE6B9C632633A5B84AD83" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Views/RootView.swift";
+			"sourceTree" = "<group>";
+		};
+		"7FABE174E0F7A3305D2AB747" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Tests/CoreTests.swift";
+			"sourceTree" = "<group>";
+		};
+		"4AD441DFB1033D3B6CA64FBE" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "folder.assetcatalog";
+			"path" = "App/Assets.xcassets";
+			"sourceTree" = "<group>";
+		};
+		"190B156325615D3BEE8D253F" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "text.xml";
+			"path" = "App/PrivacyInfo.xcprivacy";
+			"sourceTree" = "<group>";
+		};
+		"E72685212AF966A85FF3F9E9" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "text.plist.xml";
+			"path" = "App/Info.plist";
+			"sourceTree" = "<group>";
+		};
+		"F6C54EE5E4D2427DC7F08B9B" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "text.json";
+			"path" = "Tests/Fixtures.json";
+			"sourceTree" = "<group>";
+		};
+		"681C948D238C526E9E3424E0" = {
+			"isa" = "PBXFileReference";
+			"explicitFileType" = "wrapper.application";
+			"includeInIndex" = 0;
+			"path" = "LiaoChat.app";
+			"sourceTree" = "BUILT_PRODUCTS_DIR";
+		};
+		"F739566ED5280322FF98A798" = {
+			"isa" = "PBXFileReference";
+			"explicitFileType" = "wrapper.cfbundle";
+			"includeInIndex" = 0;
+			"path" = "LiaoChatTests.xctest";
+			"sourceTree" = "BUILT_PRODUCTS_DIR";
+		};
+		"0A3E27B8CA818264D75C8D81" = {
+			"isa" = "PBXGroup";
+			"children" = ("681C948D238C526E9E3424E0", "F739566ED5280322FF98A798",);
+			"name" = "Products";
+			"sourceTree" = "<group>";
+		};
+		"C4DF94A42CA730B26E01C133" = {
+			"isa" = "PBXGroup";
+			"children" = ("7FABE174E0F7A3305D2AB747", "F6C54EE5E4D2427DC7F08B9B",);
+			"name" = "Tests";
+			"sourceTree" = "<group>";
+		};
+		"19F479106CE8C3BA8C106518" = {
+			"isa" = "PBXGroup";
+			"children" = ("F19AC972E9AFB2BDC07BB431", "949474F5163E49B5DE97E7E6", "E808886452383744148F86BE", "00D466EE6168E435EFFA5456", "758CF0A4B089A4C89FA6F802", "30FCE3CE4E4929114BFB38D0", "4C201DC5DB5240DA0BB71162", "3E4D53FBD4C7BCFECFE31F16", "2962AB97368A1A865CC39898", "7A3FF1A6729400F78F12FFF3", "07D42F73A5C6AA2C77FC5416", "33F36FB735E4FE0B9D276CD3", "63BB994D8A6C445F83C7D739", "BD5A5D1BA82C144F1BF125D2", "73BCE6B9C632633A5B84AD83", "4AD441DFB1033D3B6CA64FBE", "190B156325615D3BEE8D253F", "E72685212AF966A85FF3F9E9", "C4DF94A42CA730B26E01C133", "0A3E27B8CA818264D75C8D81",);
+			"sourceTree" = "<group>";
+		};
+		"AA9B1D3BE1353EBD76471D11" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"IPHONEOS_DEPLOYMENT_TARGET" = "17.0";
+				"SWIFT_VERSION" = "5.0";
+				"SDKROOT" = "iphoneos";
+				"CLANG_ENABLE_MODULES" = "YES";
+				"TARGETED_DEVICE_FAMILY" = "1,2";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"DEVELOPMENT_TEAM" = "";
+				"SUPPORTED_PLATFORMS" = "iphoneos iphonesimulator";
+				"SUPPORTS_MACCATALYST" = "NO";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "com.example.LiaoChat";
+				"PRODUCT_NAME" = "$(TARGET_NAME)";
+				"INFOPLIST_FILE" = "App/Info.plist";
+				"GENERATE_INFOPLIST_FILE" = "NO";
+				"MARKETING_VERSION" = "0.2.0";
+				"CURRENT_PROJECT_VERSION" = "1";
+				"ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIcon";
+				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/Frameworks";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+				"DEBUG_INFORMATION_FORMAT" = "dwarf";
+				"ENABLE_TESTABILITY" = "YES";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "DEBUG $(inherited)";
+				"ONLY_ACTIVE_ARCH" = "YES";
+			};
+			"name" = "Debug";
+		};
+		"1E2E67F111F111E446D58E6C" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"IPHONEOS_DEPLOYMENT_TARGET" = "17.0";
+				"SWIFT_VERSION" = "5.0";
+				"SDKROOT" = "iphoneos";
+				"CLANG_ENABLE_MODULES" = "YES";
+				"TARGETED_DEVICE_FAMILY" = "1,2";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"DEVELOPMENT_TEAM" = "";
+				"SUPPORTED_PLATFORMS" = "iphoneos iphonesimulator";
+				"SUPPORTS_MACCATALYST" = "NO";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "com.example.LiaoChat";
+				"PRODUCT_NAME" = "$(TARGET_NAME)";
+				"INFOPLIST_FILE" = "App/Info.plist";
+				"GENERATE_INFOPLIST_FILE" = "NO";
+				"MARKETING_VERSION" = "0.2.0";
+				"CURRENT_PROJECT_VERSION" = "1";
+				"ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIcon";
+				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/Frameworks";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-O";
+				"DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym";
+			};
+			"name" = "Release";
+		};
+		"23DA22B635A4AA194832CCC9" = {
+			"isa" = "XCConfigurationList";
+			"buildConfigurations" = ("AA9B1D3BE1353EBD76471D11", "1E2E67F111F111E446D58E6C",);
+			"defaultConfigurationIsVisible" = 0;
+			"defaultConfigurationName" = "Release";
+		};
+		"C1B94A66EB4DBD812D9899CB" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "F19AC972E9AFB2BDC07BB431";
+		};
+		"AA33491DA131633D2A669CE8" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "949474F5163E49B5DE97E7E6";
+		};
+		"E6B522642B512F91BB3D9BD2" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "E808886452383744148F86BE";
+		};
+		"3BDC808253446077D53050EE" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "00D466EE6168E435EFFA5456";
+		};
+		"8462441EFEDFC50C4CE329B3" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "758CF0A4B089A4C89FA6F802";
+		};
+		"6CAF66DA7137B23588577712" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "30FCE3CE4E4929114BFB38D0";
+		};
+		"DE5901435F51EC46FF580976" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "4C201DC5DB5240DA0BB71162";
+		};
+		"CFD2BB07A8B16C09CA1DD938" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "3E4D53FBD4C7BCFECFE31F16";
+		};
+		"5A475B3AF072A377A1336BDA" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "2962AB97368A1A865CC39898";
+		};
+		"3903B24C905DBA0E951F54D4" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "7A3FF1A6729400F78F12FFF3";
+		};
+		"9A0869415EF7ED18F73E5819" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "07D42F73A5C6AA2C77FC5416";
+		};
+		"BC1F97AC285F8D6B17EF06EA" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "33F36FB735E4FE0B9D276CD3";
+		};
+		"0F84C56B45FB61340B520BD2" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "63BB994D8A6C445F83C7D739";
+		};
+		"0C7B53D9073CCA3ECF0C6A3D" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "BD5A5D1BA82C144F1BF125D2";
+		};
+		"B58D26289FAD4C1311906446" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "73BCE6B9C632633A5B84AD83";
+		};
+		"AFF87A50730392B6633ACECE" = {
+			"isa" = "PBXSourcesBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ("C1B94A66EB4DBD812D9899CB", "AA33491DA131633D2A669CE8", "E6B522642B512F91BB3D9BD2", "3BDC808253446077D53050EE", "8462441EFEDFC50C4CE329B3", "6CAF66DA7137B23588577712", "DE5901435F51EC46FF580976", "CFD2BB07A8B16C09CA1DD938", "5A475B3AF072A377A1336BDA", "3903B24C905DBA0E951F54D4", "9A0869415EF7ED18F73E5819", "BC1F97AC285F8D6B17EF06EA", "0F84C56B45FB61340B520BD2", "0C7B53D9073CCA3ECF0C6A3D", "B58D26289FAD4C1311906446",);
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"7A4C2DC8FCA657188648E999" = {
+			"isa" = "PBXFrameworksBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ();
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"CA39A3B6E255661D3E951DF8" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "4AD441DFB1033D3B6CA64FBE";
+		};
+		"B472CF573EF7F1FEB78D5016" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "190B156325615D3BEE8D253F";
+		};
+		"F9187E824FE171A6F0EFAE28" = {
+			"isa" = "PBXResourcesBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ("CA39A3B6E255661D3E951DF8", "B472CF573EF7F1FEB78D5016",);
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"C1E9827DB735CA9BAA54A540" = {
+			"isa" = "PBXNativeTarget";
+			"buildConfigurationList" = "23DA22B635A4AA194832CCC9";
+			"buildPhases" = ("AFF87A50730392B6633ACECE", "7A4C2DC8FCA657188648E999", "F9187E824FE171A6F0EFAE28",);
+			"buildRules" = ();
+			"dependencies" = ();
+			"name" = "LiaoChat";
+			"productName" = "LiaoChat";
+			"productReference" = "681C948D238C526E9E3424E0";
+			"productType" = "com.apple.product-type.application";
+		};
+		"00B65C7FF4DF955E2B77DCDC" = {
+			"isa" = "PBXContainerItemProxy";
+			"containerPortal" = "244210E48437B6556980A702";
+			"proxyType" = 1;
+			"remoteGlobalIDString" = "C1E9827DB735CA9BAA54A540";
+			"remoteInfo" = "LiaoChat";
+		};
+		"F9A94CEF8CF7D85CE881E703" = {
+			"isa" = "PBXTargetDependency";
+			"target" = "C1E9827DB735CA9BAA54A540";
+			"targetProxy" = "00B65C7FF4DF955E2B77DCDC";
+		};
+		"8617DF137A9B97CF1A31A959" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"IPHONEOS_DEPLOYMENT_TARGET" = "17.0";
+				"SWIFT_VERSION" = "5.0";
+				"SDKROOT" = "iphoneos";
+				"CLANG_ENABLE_MODULES" = "YES";
+				"TARGETED_DEVICE_FAMILY" = "1,2";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"DEVELOPMENT_TEAM" = "";
+				"SUPPORTED_PLATFORMS" = "iphoneos iphonesimulator";
+				"SUPPORTS_MACCATALYST" = "NO";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "com.example.LiaoChatTests";
+				"PRODUCT_NAME" = "$(TARGET_NAME)";
+				"GENERATE_INFOPLIST_FILE" = "YES";
+				"TEST_HOST" = "$(BUILT_PRODUCTS_DIR)/LiaoChat.app/LiaoChat";
+				"BUNDLE_LOADER" = "$(TEST_HOST)";
+				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+				"DEBUG_INFORMATION_FORMAT" = "dwarf";
+				"ENABLE_TESTABILITY" = "YES";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "DEBUG $(inherited)";
+				"ONLY_ACTIVE_ARCH" = "YES";
+			};
+			"name" = "Debug";
+		};
+		"90E60CB84C8CDC20C93E6F85" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"IPHONEOS_DEPLOYMENT_TARGET" = "17.0";
+				"SWIFT_VERSION" = "5.0";
+				"SDKROOT" = "iphoneos";
+				"CLANG_ENABLE_MODULES" = "YES";
+				"TARGETED_DEVICE_FAMILY" = "1,2";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"DEVELOPMENT_TEAM" = "";
+				"SUPPORTED_PLATFORMS" = "iphoneos iphonesimulator";
+				"SUPPORTS_MACCATALYST" = "NO";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "com.example.LiaoChatTests";
+				"PRODUCT_NAME" = "$(TARGET_NAME)";
+				"GENERATE_INFOPLIST_FILE" = "YES";
+				"TEST_HOST" = "$(BUILT_PRODUCTS_DIR)/LiaoChat.app/LiaoChat";
+				"BUNDLE_LOADER" = "$(TEST_HOST)";
+				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-O";
+				"DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym";
+			};
+			"name" = "Release";
+		};
+		"8F489A4BEBC491051A5E73AB" = {
+			"isa" = "XCConfigurationList";
+			"buildConfigurations" = ("8617DF137A9B97CF1A31A959", "90E60CB84C8CDC20C93E6F85",);
+			"defaultConfigurationIsVisible" = 0;
+			"defaultConfigurationName" = "Release";
+		};
+		"9F0A6F67CFBF2781432C95A8" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "7FABE174E0F7A3305D2AB747";
+		};
+		"DEE94446A282611C16F7781C" = {
+			"isa" = "PBXSourcesBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ("9F0A6F67CFBF2781432C95A8",);
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"B10CDED79664567B030B2B4F" = {
+			"isa" = "PBXFrameworksBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ();
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"49A0BF083761E5F429FBE91A" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "F6C54EE5E4D2427DC7F08B9B";
+		};
+		"1F030AB36D1A3A4389CF71AE" = {
+			"isa" = "PBXResourcesBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ("49A0BF083761E5F429FBE91A",);
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"9805CBD60EB4F66728D5D195" = {
+			"isa" = "PBXNativeTarget";
+			"buildConfigurationList" = "8F489A4BEBC491051A5E73AB";
+			"buildPhases" = ("DEE94446A282611C16F7781C", "B10CDED79664567B030B2B4F", "1F030AB36D1A3A4389CF71AE",);
+			"buildRules" = ();
+			"dependencies" = ("F9A94CEF8CF7D85CE881E703",);
+			"name" = "LiaoChatTests";
+			"productName" = "LiaoChatTests";
+			"productReference" = "F739566ED5280322FF98A798";
+			"productType" = "com.apple.product-type.bundle.unit-test";
+		};
+		"2B23A31EEC75B029432F2445" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+				"DEBUG_INFORMATION_FORMAT" = "dwarf";
+				"ENABLE_TESTABILITY" = "YES";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "DEBUG $(inherited)";
+				"ONLY_ACTIVE_ARCH" = "YES";
+			};
+			"name" = "Debug";
+		};
+		"07CA1E69F6068DEA30A4DA6B" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"SWIFT_OPTIMIZATION_LEVEL" = "-O";
+				"DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym";
+			};
+			"name" = "Release";
+		};
+		"5E5822C924B61AE2B9A1EF24" = {
+			"isa" = "XCConfigurationList";
+			"buildConfigurations" = ("2B23A31EEC75B029432F2445", "07CA1E69F6068DEA30A4DA6B",);
+			"defaultConfigurationIsVisible" = 0;
+			"defaultConfigurationName" = "Release";
+		};
+		"244210E48437B6556980A702" = {
+			"isa" = "PBXProject";
+			"attributes" = {
+				"LastUpgradeCheck" = "1600";
+				"TargetAttributes" = {
+					"C1E9827DB735CA9BAA54A540" = {
+						"CreatedOnToolsVersion" = "16.0";
+					};
+					"9805CBD60EB4F66728D5D195" = {
+						"CreatedOnToolsVersion" = "16.0";
+						"TestTargetID" = "C1E9827DB735CA9BAA54A540";
+					};
+				};
+			};
+			"buildConfigurationList" = "5E5822C924B61AE2B9A1EF24";
+			"compatibilityVersion" = "Xcode 14.0";
+			"developmentRegion" = "zh-Hans";
+			"hasScannedForEncodings" = 0;
+			"knownRegions" = ("zh-Hans", "en", "Base",);
+			"mainGroup" = "19F479106CE8C3BA8C106518";
+			"productRefGroup" = "0A3E27B8CA818264D75C8D81";
+			"projectDirPath" = "";
+			"projectRoot" = "";
+			"targets" = ("C1E9827DB735CA9BAA54A540", "9805CBD60EB4F66728D5D195",);
+		};
+	};
+	"rootObject" = "244210E48437B6556980A702";
+}

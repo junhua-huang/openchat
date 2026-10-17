@@ -69,7 +69,7 @@ struct LiquidCluster<Content: View>: View {
     let content: Content
     init(@ViewBuilder content: () -> Content) { self.content = content() }
     @ViewBuilder var body: some View {
-        if #available(iOS 26.0, *) { GlassEffectContainer(spacing: 18) { content } }
+        if #available(iOS 26.0, *) { GlassEffectContainer(spacing: 6) { content } }
         else { content }
     }
 }

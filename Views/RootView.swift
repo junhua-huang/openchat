@@ -13,15 +13,6 @@ struct RootView: View {
             connectedContent
             #endif
         }
-        .sheet(item: $auth.browser, onDismiss: { auth.browserDidDismiss() }) { item in
-            SafariBrowser(url: item.url) { auth.browser = nil }.ignoresSafeArea()
-        }
-        .alert(auth.errorText == nil ? "正在使用你的 ChatGPT 套餐" : "连接提示", isPresented: Binding(
-            get: { auth.errorText != nil || auth.showPlanNotice },
-            set: { if !$0 { auth.errorText = nil; auth.showPlanNotice = false } }
-        )) { Button("知道了", role: .cancel) { auth.errorText = nil; auth.showPlanNotice = false } } message: {
-            Text(auth.errorText ?? "符合条件的 AI 请求会使用你授权的 ChatGPT 套餐。你可以在 ChatGPT 设置中查看用量并管理授权。")
-        }
     }
     private var connectedContent: some View {
         Group {
@@ -30,6 +21,15 @@ struct RootView: View {
             }
             else if let id = auth.activeID { ChatWorkspaceView(accountID: id, auth: auth).id(id) }
             else { WelcomeView() }
+        }
+        .sheet(item: $auth.browser, onDismiss: { auth.browserDidDismiss() }) { item in
+            SafariBrowser(url: item.url) { auth.browser = nil }.ignoresSafeArea()
+        }
+        .alert(auth.errorText == nil ? "正在使用你的 ChatGPT 套餐" : "连接提示", isPresented: Binding(
+            get: { auth.errorText != nil || auth.showPlanNotice },
+            set: { if !$0 { auth.errorText = nil; auth.showPlanNotice = false } }
+        )) { Button("知道了", role: .cancel) { auth.errorText = nil; auth.showPlanNotice = false } } message: {
+            Text(auth.errorText ?? "符合条件的 AI 请求会使用你授权的 ChatGPT 套餐。你可以在 ChatGPT 设置中查看用量并管理授权。")
         }
     }
 }

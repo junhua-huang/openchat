@@ -21,3 +21,20 @@ xcrun simctl terminate "$capture_device_id" com.example.LiaoChat || true
 xcrun simctl launch "$capture_device_id" com.example.LiaoChat --ui-preview --ui-models
 sleep 4
 xcrun simctl io "$capture_device_id" screenshot build/ui/model-effort-light.png
+for surface in files tools approval; do
+  xcrun simctl terminate "$capture_device_id" com.example.LiaoChat || true
+  xcrun simctl launch "$capture_device_id" com.example.LiaoChat --ui-preview "--ui-$surface"
+  sleep 4
+  xcrun simctl io "$capture_device_id" screenshot "build/ui/$surface-light.png"
+done
+xcrun simctl get_app_container "$capture_device_id" com.example.LiaoChat data > build/ui-container.txt
+python3 - <<'PY'
+from pathlib import Path
+import shutil
+container = Path('build/ui-container.txt').read_text().strip()
+target = Path('build/generated'); target.mkdir(exist_ok=True)
+for source in Path(container, 'tmp').glob('OpenChat-UI-*/files/*/*'):
+    if source.suffix in {'.pdf', '.docx', '.xlsx', '.zip'}:
+        shutil.copyfile(source, target / ('native-sample' + source.suffix))
+assert {p.suffix for p in target.iterdir()} == {'.pdf', '.docx', '.xlsx', '.zip'}, 'Native sample generation incomplete'
+PY

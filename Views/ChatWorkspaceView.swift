@@ -1,6 +1,8 @@
 import SwiftUI
+import UniformTypeIdentifiers
+import PhotosUI
 
-private enum WorkspaceSheet: String, Identifiable { case history, models, settings; var id: String { rawValue } }
+private enum WorkspaceSheet: String, Identifiable { case history, models, settings, tools; var id: String { rawValue } }
 private struct ConnectIntent { let accountID: UUID? }
 private struct ChatBottomKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
@@ -21,6 +23,12 @@ struct ChatWorkspaceView: View {
     @State private var followOutput = true
     @State private var isNearBottom = true
     @State private var isDragging = false
+    @State private var importing = false
+    @State private var showingPhotos = false
+    @State private var photos: [PhotosPickerItem] = []
+    @State private var showingApproval = false
+    @State private var photoLoading = false
+    @State private var importTarget: UUID?
     @FocusState private var inputFocused: Bool
 
     init(accountID: UUID, auth: AuthManager, apiConnection: APIConnection? = nil) {
@@ -33,7 +41,7 @@ struct ChatWorkspaceView: View {
     }
 
     private var canSend: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !(store.selected?.draftAttachments ?? []).isEmpty) && !store.isImporting && !photoLoading
             && store.models.contains(where: { $0.slug == store.selectedModel }) && store.storageReady && store.canUseConnection
     }
     private var modelName: String {
@@ -75,6 +83,7 @@ struct ChatWorkspaceView: View {
                     pendingConnection = ConnectIntent(accountID: id)
                     sheet = nil
                 }
+            case .tools: ToolsSettingsView(store: store)
             }
         }
         .sheet(item: $editingMessage) { message in
@@ -84,6 +93,31 @@ struct ChatWorkspaceView: View {
                 return sent
             }
         }
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.data], allowsMultipleSelection: true) { result in
+            switch result {
+            case .success(let urls): let target = importTarget; Task { await store.importFiles(urls, threadID: target) }
+            case .failure(let error): store.errorText = error.localizedDescription
+            }
+        }
+        .photosPicker(isPresented: $showingPhotos, selection: $photos, maxSelectionCount: 4, matching: .images)
+        .onChange(of: photos) { _, items in
+            guard !items.isEmpty else { return }
+            let target = store.selectedID; photoLoading = true
+            Task {
+                defer { photoLoading = false }
+                for item in items {
+                    do { if let data = try await item.loadTransferable(type: Data.self) { await store.importPhoto(data, threadID: target) } }
+                    catch { store.errorText = "无法读取照片，请重新选择。" }
+                }
+                photos = []
+            }
+        }
+        .sheet(isPresented: $showingApproval) {
+            if let approval = store.selectedApproval {
+                ToolApprovalView(approval: approval) { allow in store.resolveApproval(approval.id, allow: allow); showingApproval = false }
+            }
+        }
+        .onChange(of: store.selectedApproval?.id) { _, id in if id == nil { showingApproval = false } }
         .task { await store.loadModels() }
         .onChange(of: auth.activeID) { _, id in
             if id != nil, store.isAPIConnection {
@@ -117,6 +151,7 @@ struct ChatWorkspaceView: View {
                 }.disabled(!store.storageReady).accessibilityLabel("新建对话")
                 Menu {
                     Button("账户与设置", systemImage: "person.crop.circle") { inputFocused = false; sheet = .settings }
+                    Button("工具与 MCP", systemImage: "wrench.and.screwdriver") { inputFocused = false; sheet = .tools }
                     if let thread = store.selected, !thread.messages.isEmpty {
                         ShareLink(item: thread.markdown) { Label("分享整段对话", systemImage: "square.and.arrow.up") }
                         Button(thread.isPinned == true ? "取消置顶" : "置顶对话", systemImage: "pin") { store.togglePin(thread.id) }
@@ -134,7 +169,7 @@ struct ChatWorkspaceView: View {
                     LazyVStack(alignment: .leading, spacing: 30) {
                         if store.selected?.messages.isEmpty != false { emptyState }
                         ForEach(store.selected?.messages ?? []) { message in
-                            MessageRow(message: message,
+                            MessageRow(message: message, fileVault: store.fileVault,
                                 canRetry: message.role == .assistant && store.selected?.messages.last?.id == message.id && !store.isSending,
                                 retry: { followOutput = true; store.retry() },
                                 edit: { inputFocused = false; editingMessage = message },
@@ -215,14 +250,42 @@ struct ChatWorkspaceView: View {
     }
     private var composer: some View {
         VStack(spacing: 8) {
+            if let approval = store.selectedApproval {
+                Button { inputFocused = false; showingApproval = true } label: {
+                    Label("等待确认：" + approval.name, systemImage: "hand.raised").font(.subheadline)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(14).background(Palette.card, in: RoundedRectangle(cornerRadius: 18))
+                }.accessibilityLabel("查看待确认的工具调用")
+            }
             VStack(alignment: .leading, spacing: 8) {
+                if !(store.selected?.draftAttachments ?? []).isEmpty {
+                    ScrollView(.horizontal) {
+                        HStack(spacing: 8) {
+                            ForEach(store.selected?.draftAttachments ?? []) { file in
+                                AttachmentCard(file: file, url: try? store.fileVault?.url(file), remove: { store.removeDraftFile(file.id) }).frame(width: 240)
+                            }
+                        }.padding(.horizontal, 12)
+                    }.padding(.top, 12)
+                    Text("附件将随问题发送给当前 AI 服务；PDF/Word/Excel 提取文字，图片交给视觉模型。")
+                        .font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 18)
+                }
                 TextField("发送消息", text: Binding(get: { draft }, set: { draft = $0 }), axis: .vertical)
                     .lineLimit(1...(dynamicTypeSize.isAccessibilitySize ? 4 : 8)).focused($inputFocused)
                     .padding(.top, 16).padding(.horizontal, 18)
                     .accessibilityLabel("消息内容").textInputAutocapitalization(.sentences)
                 HStack(spacing: 10) {
-                    Text(store.isSending ? "正在回复，可以先写下一条消息" : store.connectionName)
+                    Menu {
+                        Button("添加文件", systemImage: "doc.badge.plus") { inputFocused = false; importTarget = store.selectedID; importing = true }
+                        Button("选择照片", systemImage: "photo") { inputFocused = false; showingPhotos = true }
+                        Button("工具与 MCP", systemImage: "wrench.and.screwdriver") { inputFocused = false; sheet = .tools }
+                    } label: {
+                        Image(systemName: "plus").font(.system(size: 18, weight: .medium)).frame(width: 32, height: 40)
+                    }.disabled(store.isImporting || photoLoading || !store.storageReady).accessibilityLabel("添加附件或工具")
+                    Text(store.isImporting || photoLoading ? "正在读取附件…" : store.isSending ? "正在回复" : store.connectionName)
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    if store.toolSettings.enabled {
+                        Button { inputFocused = false; sheet = .tools } label: { Image(systemName: "wrench.and.screwdriver").font(.caption).frame(width: 28, height: 36) }
+                            .foregroundStyle(.secondary).accessibilityLabel("工具已启用，打开工具设置")
+                    }
                     Spacer(minLength: 0)
                     Button(action: sendOrStop) {
                         Image(systemName: store.isSending ? "stop.fill" : "arrow.up")

@@ -94,7 +94,7 @@ struct SSEParser {
         let raw = String(line.dropFirst(5))
         let part = raw.hasPrefix(" ") ? String(raw.dropFirst()) : raw
         size += part.utf8.count
-        guard size < 4_000_000 else { throw AppFailure.message("单个响应事件过大，请重新开始对话。") }
+        guard size < 16_000_000 else { throw AppFailure.message("单个响应事件过大，请重新开始对话。") }
         data.append(part)
         return nil
     }
@@ -131,7 +131,7 @@ struct SSEByteLines<Base: AsyncSequence>: AsyncSequence where Base.Element == UI
                     skipLF = byte == 13
                     return try takeLine()
                 }
-                guard buffer.count < 4_000_000 else {
+                guard buffer.count < 16_000_000 else {
                     throw AppFailure.message("单行响应过大，请重新开始对话。")
                 }
                 buffer.append(byte)

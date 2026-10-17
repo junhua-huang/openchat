@@ -12,9 +12,10 @@ struct HistoryView: View {
 
     private var results: [ChatThread] {
         store.threads.filter { thread in
-            (!thread.messages.isEmpty || !(thread.draft ?? "").isEmpty) && (query.isEmpty || thread.title.localizedStandardContains(query)
+            (!thread.messages.isEmpty || !(thread.draft ?? "").isEmpty || !(thread.draftAttachments ?? []).isEmpty) && (query.isEmpty || thread.title.localizedStandardContains(query)
                 || (thread.draft ?? "").localizedStandardContains(query)
-                || thread.messages.contains { $0.text.localizedStandardContains(query) })
+                || thread.messages.contains { $0.text.localizedStandardContains(query) || ($0.attachments ?? []).contains { $0.name.localizedStandardContains(query) } }
+                || (thread.draftAttachments ?? []).contains { $0.name.localizedStandardContains(query) })
         }.sorted { $0.updated > $1.updated }
     }
     private func group(_ thread: ChatThread) -> Int {
@@ -92,7 +93,8 @@ struct HistoryView: View {
             }
             Spacer(minLength: 4)
             if store.generatingThreadIDs.contains(thread.id) {
-                ProgressView().controlSize(.small).accessibilityLabel("正在回复")
+                if store.approvals.contains(where: { $0.threadID == thread.id }) { Image(systemName: "hand.raised").accessibilityLabel("等待工具确认") }
+                else { ProgressView().controlSize(.small).accessibilityLabel("正在回复") }
             } else if thread.isPinned == true {
                 Image(systemName: "pin.fill").font(.caption).foregroundStyle(.secondary)
             }
@@ -102,6 +104,7 @@ struct HistoryView: View {
     }
     private func preview(_ thread: ChatThread) -> String {
         if let draft = thread.draft, !draft.isEmpty { return "草稿：" + draft.replacingOccurrences(of: "\n", with: " ") }
+        if let file = thread.draftAttachments?.first { return "待发送附件：" + file.name }
         if !query.isEmpty, let match = thread.messages.first(where: { $0.text.localizedStandardContains(query) }) {
             return match.text.replacingOccurrences(of: "\n", with: " ")
         }

@@ -3,22 +3,33 @@ import UIKit
 
 struct MessageRow: View, Equatable {
     let message: ChatMessage
+    var fileVault: FileVault? = nil
     let canRetry: Bool
     let retry: () -> Void
     let edit: () -> Void
     let chooseVersion: (Int) -> Void
     @State private var copied = false
     @State private var copiedDiagnostic = false
-    static func == (lhs: MessageRow, rhs: MessageRow) -> Bool { lhs.message == rhs.message && lhs.canRetry == rhs.canRetry }
+    @State private var linkedFile: AttachmentPreview?
+    @State private var missingFile = false
+    static func == (lhs: MessageRow, rhs: MessageRow) -> Bool { lhs.message == rhs.message && lhs.canRetry == rhs.canRetry && lhs.fileVault?.directory == rhs.fileVault?.directory }
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
             if message.role == .user { Spacer(minLength: 48) }
             VStack(alignment: .leading, spacing: 12) {
+                ForEach(message.toolActivities ?? []) { activity in ToolActivityRow(activity: activity) }
                 if !message.text.isEmpty {
                     if message.role == .user {
                         Text(message.text).textSelection(.enabled).lineSpacing(5)
                     } else { RichMessageView(text: message.text).equatable() }
+                }
+                if message.role == .assistant, message.status == .complete, message.text.isEmpty, (message.attachments ?? []).isEmpty {
+                    Text("模型没有返回文字，可以重新生成。").font(.subheadline).foregroundStyle(.secondary)
+                }
+                ForEach(message.attachments ?? []) { file in
+                    AttachmentCard(file: file, url: try? fileVault?.url(file))
+                    if let note = file.note { Text(note).font(.caption2).foregroundStyle(.secondary) }
                 }
                 if message.status == .streaming {
                     HStack(spacing: 9) {
@@ -54,6 +65,18 @@ struct MessageRow: View, Equatable {
         }
         .onChange(of: message.text) { _, _ in copied = false; copiedDiagnostic = false }
         .onChange(of: message.diagnostic) { _, _ in copiedDiagnostic = false }
+        .environment(\.openURL, OpenURLAction { url in
+            guard ["sandbox", "file"].contains(url.scheme ?? "") else { return .systemAction }
+            if url.scheme == "sandbox", let file = message.attachments?.first(where: { $0.name == url.lastPathComponent }),
+               let local = try? fileVault?.url(file), FileManager.default.fileExists(atPath: local.path) {
+                linkedFile = AttachmentPreview(url: local)
+            } else { missingFile = true }
+            return .handled
+        })
+        .sheet(item: $linkedFile) { item in NativeFilePreview(url: item.url).ignoresSafeArea() }
+        .alert("没有对应的文件", isPresented: $missingFile) {
+            Button("知道了", role: .cancel) { }
+        } message: { Text("只有实际生成并保存的附件才能预览。请使用文件卡片，或让模型调用文件生成工具。") }
     }
     private var actions: some View {
         HStack(spacing: 2) {

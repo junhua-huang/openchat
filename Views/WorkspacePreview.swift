@@ -8,6 +8,11 @@ struct WorkspacePreview: View {
     var body: some View {
         if ProcessInfo.processInfo.arguments.contains("--ui-models") {
             ModelPickerView(store: store) { store.selectModel($0) }.task { await store.loadModels() }
+        } else if ProcessInfo.processInfo.arguments.contains("--ui-tools") {
+            ToolsSettingsView(store: store)
+        } else if ProcessInfo.processInfo.arguments.contains("--ui-approval") {
+            ToolApprovalView(approval: ToolApproval(threadID: UUID(), runID: UUID(), name: "示例 MCP / 搜索",
+                arguments: "{\n  \"query\": \"原生 iOS 文件预览\"\n}")) { _ in }
         } else { ChatWorkspaceView(store: store) }
     }
     @MainActor private static func makeStore(auth: AuthManager) -> ChatStore {
@@ -36,17 +41,30 @@ struct WorkspacePreview: View {
         \(ticks)
         """
         let empty = ProcessInfo.processInfo.arguments.contains("--ui-empty")
-        let thread = ChatThread(title: empty ? "新对话" : "从想法到作品", model: "gpt-6.1-sol",
+        var thread = ChatThread(title: empty ? "新对话" : "从想法到作品", model: "gpt-6.1-sol",
             messages: empty ? [] : [ChatMessage(role: .user, text: "怎样把一个想法变成作品？"),
                                    ChatMessage(role: .assistant, text: answer)],
             draft: empty ? nil : "帮我把第二步展开讲讲", reasoningEfforts: ["gpt-6.1-sol": "high"])
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            if ProcessInfo.processInfo.arguments.contains("--ui-files") {
+                let vault = try FileVault(accountID: connection.id, root: directory.appendingPathComponent("files"))
+                let file = try vault.save(data: FileFormats.generate(format: "pdf", content: "行动计划\n\n今天：完成核心流程。\n明天：收集真实反馈。"), name: "行动计划.pdf", text: "行动计划")
+                _ = try vault.save(data: FileFormats.generate(format: "docx", content: "OpenChat 文档🙂\n第二段"), name: "示例.docx")
+                _ = try vault.save(data: FileFormats.generate(format: "xlsx", content: #"[["项目","金额"],["示例",12.5]]"#), name: "示例.xlsx")
+                _ = try vault.save(data: FileFormats.generate(format: "zip", content: #"[{"name":"hello.txt","content":"native ZIP 你好🙂"}]"#), name: "示例.zip")
+                let source = try vault.save(data: Data("# 我的需求\n做一个原生应用。".utf8), name: "需求.md", text: "# 我的需求\n做一个原生应用。")
+                thread.messages = [ChatMessage(role: .user, text: "把计划整理成 PDF 文件。"),
+                    ChatMessage(role: .assistant, text: "已经整理成 PDF。点击文件卡片可预览，通过分享按钮保存到「文件」。",
+                        attachments: [file], toolActivities: [ToolActivity(id: "synthetic-file", name: "create_file", state: "complete", detail: "文件已保存到本机")])]
+                thread.draft = "再分析一下这个需求"; thread.draftAttachments = [source]
+            }
             try JSONEncoder().encode(ChatArchive(threads: [thread], selectedID: thread.id))
                 .write(to: directory.appendingPathComponent(connection.id.uuidString + ".json"))
         } catch { assertionFailure("Unable to prepare synthetic UI fixture") }
         return ChatStore(accountID: connection.id, auth: auth, apiConnection: connection,
-                         storageDirectory: directory, transport: { _, _, _, delta in delta("这是本地界面预览。") })
+                         storageDirectory: directory, transport: { _, _, _, delta in delta("这是本地界面预览。") },
+                         mcpConnections: MCPConnections(memoryOnly: true, servers: [MCPServer(name: "示例 MCP", endpoint: "https://synthetic.invalid/mcp")]))
     }
 }
 #endif

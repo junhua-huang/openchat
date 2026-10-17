@@ -10,6 +10,7 @@ struct AccountView: View {
     @AppStorage("hapticFeedback") private var hapticFeedback = true
     @State private var confirmClear = false
     @State private var confirmSignOut = false
+    @State private var showingTools = false
 
     var body: some View {
         NavigationStack {
@@ -17,6 +18,7 @@ struct AccountView: View {
                 AmbientBackground()
                 Form {
                     Section("AI 服务") {
+                        Button { showingTools = true } label: { Label("工具与 MCP", systemImage: "wrench.and.screwdriver") }
                         NavigationLink { APISettingsView() } label: {
                             Label("API 连接与服务商", systemImage: "server.rack")
                         }
@@ -89,7 +91,7 @@ struct AccountView: View {
                             OpenChatMark(size: 42)
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("openchat").font(.system(.subheadline, design: .rounded, weight: .semibold))
-                                Text("\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.1") · 开源客户端")
+                                Text("\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.0.0") · 开源客户端")
                                     .font(.caption).foregroundStyle(.secondary)
                             }.padding(.leading, 7)
                         }.padding(.vertical, 5)
@@ -100,6 +102,7 @@ struct AccountView: View {
             }
             .navigationTitle("账户与设置").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完成") { dismiss() } } }
+            .sheet(isPresented: $showingTools) { ToolsSettingsView(store: store) }
             .confirmationDialog("删除当前连接在本机的全部对话？", isPresented: $confirmClear, titleVisibility: .visible) {
                 Button("删除全部对话", role: .destructive) { store.clearHistory() }
             }

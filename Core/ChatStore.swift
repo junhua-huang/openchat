@@ -3,6 +3,7 @@ import Combine
 
 typealias ChatTransport = @MainActor (_ model: String, _ history: [ChatMessage], _ effort: ReasoningEffort,
                                      _ onDelta: @escaping (String) -> Void) async throws -> Void
+typealias ChatAgentTransport = @MainActor (_ runtime: ToolRuntime, _ onDelta: @escaping (String) -> Void) async throws -> Void
 
 @MainActor
 final class ChatStore: ObservableObject {
@@ -14,10 +15,16 @@ final class ChatStore: ObservableObject {
     @Published private(set) var isLoadingModels = false
     @Published private(set) var storageReady = false
     @Published var errorText: String?
+    @Published private(set) var approvals: [ToolApproval] = []
+    @Published private(set) var importingThreadIDs: Set<UUID> = []
+    let mcpConnections: MCPConnections
+    private(set) var fileVault: FileVault?
+    private var approvalContinuations: [UUID: CheckedContinuation<Bool, Error>] = [:]
     private let accountID: UUID
     private let auth: AuthManager
     let apiConnection: APIConnection?
     private let transport: ChatTransport?
+    private let agentTransport: ChatAgentTransport?
     private var fileURL: URL?
     private var requests: [UUID: Task<Void, Never>] = [:]
     private var runs: [UUID: UUID] = [:]
@@ -27,6 +34,10 @@ final class ChatStore: ObservableObject {
     private var draftTask: Task<Void, Never>?
     var selected: ChatThread? { threads.first { $0.id == selectedID } }
     var isSending: Bool { selectedID.map { generatingThreadIDs.contains($0) } ?? false }
+    var isImporting: Bool { selectedID.map { importingThreadIDs.contains($0) } ?? false }
+    var selectedApproval: ToolApproval? { approvals.first { $0.threadID == selectedID } }
+    var toolSettings: ToolSettings { selected?.toolSettings ?? ToolSettings() }
+    var canUseHostedTools: Bool { apiConnection?.isOfficialResponses == true }
     var isAPIConnection: Bool { apiConnection != nil }
     var canUseConnection: Bool { isAPIConnection || (!auth.isBusy && auth.activeAccount?.tokens?.permitsInference == true) }
     var connectionName: String { apiConnection?.name ?? "ChatGPT" }
@@ -39,9 +50,12 @@ final class ChatStore: ObservableObject {
     }
 
     init(accountID: UUID, auth: AuthManager, apiConnection: APIConnection? = nil,
-         storageDirectory: URL? = nil, transport: ChatTransport? = nil) {
+         storageDirectory: URL? = nil, transport: ChatTransport? = nil,
+         mcpConnections: MCPConnections? = nil, agentTransport: ChatAgentTransport? = nil) {
         self.accountID = accountID; self.auth = auth; self.apiConnection = apiConnection; self.transport = transport
+        self.mcpConnections = mcpConnections ?? MCPConnections(); self.agentTransport = agentTransport
         do {
+            fileVault = try FileVault(accountID: accountID, root: storageDirectory?.appendingPathComponent("files"))
             var directory = try storageDirectory ?? FileManager.default.url(for: .applicationSupportDirectory,
                 in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent("LiaoChat/chats", isDirectory: true)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
@@ -56,6 +70,9 @@ final class ChatStore: ObservableObject {
                     for j in threads[i].messages.indices where threads[i].messages[j].status == .streaming {
                         threads[i].messages[j].status = .cancelled
                         threads[i].messages[j].problem = "上次回复被中断"
+                        if let activities = threads[i].messages[j].toolActivities {
+                            threads[i].messages[j].toolActivities = activities.map { var x = $0; if x.state == "running" { x.state = "cancelled"; x.detail = "上次执行被中断" }; return x }
+                        }
                         threads[i].messages[j].recordVersion()
                     }
                 }
@@ -110,11 +127,12 @@ final class ChatStore: ObservableObject {
     func newThread() {
         guard storageReady else { return }
         let choices = selected?.reasoningEfforts
-        if let index = threads.firstIndex(where: { $0.messages.isEmpty && ($0.draft ?? "").isEmpty }) {
+        let settings = selected?.toolSettings
+        if let index = threads.firstIndex(where: { $0.messages.isEmpty && ($0.draft ?? "").isEmpty && ($0.draftAttachments ?? []).isEmpty && !importingThreadIDs.contains($0.id) }) {
             selectedID = threads[index].id; threads[index].model = selectedModel
-            threads[index].reasoningEfforts = choices; persist(); return
+            threads[index].reasoningEfforts = choices; threads[index].toolSettings = settings; persist(); return
         }
-        let thread = ChatThread(model: selectedModel, reasoningEfforts: choices)
+        let thread = ChatThread(model: selectedModel, reasoningEfforts: choices, toolSettings: settings)
         threads.insert(thread, at: 0); selectedID = thread.id; persist()
     }
     func select(_ thread: ChatThread) {
@@ -138,12 +156,14 @@ final class ChatStore: ObservableObject {
     }
     func delete(_ ids: Set<UUID>) {
         guard storageReady else { return }
+        let previousFiles = referencedFiles()
         for id in ids { stop(threadID: id) }
         threads.removeAll { ids.contains($0.id) }
         if let selectedID = selectedID, ids.contains(selectedID) { self.selectedID = threads.first?.id }
         if threads.isEmpty { newThread() }
         else if let selected = selected { select(selected) }
         else { persist() }
+        if persist() { removeUnused(previousFiles) }
     }
     func clearHistory() { delete(Set(threads.map(\.id))) }
     func rename(_ id: UUID, to title: String) {
@@ -160,9 +180,12 @@ final class ChatStore: ObservableObject {
     }
     @discardableResult func send(_ text: String) -> Bool {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !isSending, canStart, let index = threads.firstIndex(where: { $0.id == selectedID }) else { return false }
-        threads[index].messages.append(ChatMessage(role: .user, text: text)); threads[index].draft = nil
-        if threads[index].title == "新对话" { threads[index].title = String(text.prefix(28)) }
+        guard !isSending, !isImporting, canStart, let index = threads.firstIndex(where: { $0.id == selectedID }),
+              !text.isEmpty || !(threads[index].draftAttachments ?? []).isEmpty else { return false }
+        let files = threads[index].draftAttachments
+        threads[index].messages.append(ChatMessage(role: .user, text: text.isEmpty ? "请分析这些附件。" : text, attachments: files))
+        threads[index].draft = nil; threads[index].draftAttachments = nil
+        if threads[index].title == "新对话" { threads[index].title = String((text.isEmpty ? files?.first?.name ?? "附件对话" : text).prefix(28)) }
         startRequest(threadIndex: index); return true
     }
     func retry() {
@@ -185,6 +208,7 @@ final class ChatStore: ObservableObject {
     private func startRequest(threadIndex index: Int, response existing: ChatMessage? = nil) {
         let history = threads[index].messages
         let threadID = threads[index].id; let model = selectedModel; let effort = selectedEffort
+        let settings = toolSettings; let servers = mcpConnections.servers
         let response = existing ?? ChatMessage(role: .assistant, text: "", status: .streaming, model: model,
                                                reasoningEffort: effort == .automatic ? nil : effort.rawValue)
         threads[index].model = model; threads[index].updated = Date()
@@ -198,11 +222,22 @@ final class ChatStore: ObservableObject {
             do {
                 let onDelta: (String) -> Void = { [weak self] delta in self?.buffer(delta, threadID: threadID, runID: runID) }
                 if let transport = self.transport { try await transport(model, history, effort, onDelta) }
-                else if let connection = self.apiConnection {
-                    try await APIChatClient.stream(connection: connection, model: model, history: history, effort: effort, onDelta: onDelta)
-                } else {
-                    let token = try await self.auth.accessToken(for: self.accountID); try Task.checkCancellation()
-                    try await ResponsesClient.stream(token: token, model: model, history: history, effort: effort, onDelta: onDelta)
+                else {
+                    guard let vault = self.fileVault else { throw AppFailure.message("附件存储未就绪。") }
+                    let token: String
+                    if let connection = self.apiConnection { token = connection.apiKey }
+                    else { token = try await self.auth.accessToken(for: self.accountID) }
+                    try Task.checkCancellation()
+                    let runtime = ToolRuntime(vault: vault, files: history.flatMap { $0.attachments ?? [] }, servers: servers,
+                        approve: { [weak self] name, arguments in
+                            guard let self = self else { throw CancellationError() }
+                            return try await self.requestApproval(threadID: threadID, runID: runID, name: name, arguments: arguments)
+                        }, event: { [weak self] event in self?.receive(event, threadID: threadID, runID: runID) })
+                    if let agent = self.agentTransport { try await agent(runtime, onDelta) }
+                    else {
+                        try await ChatAgentClient.run(endpoint: AgentEndpoint(token: token, connection: self.apiConnection), model: model,
+                            history: history, effort: effort, settings: settings, runtime: runtime, delta: onDelta)
+                    }
                 }
                 guard self.runs[threadID] == runID else { return }
                 try Task.checkCancellation(); self.flush(threadID)
@@ -235,6 +270,9 @@ final class ChatStore: ObservableObject {
         threads[i].messages[j].text += text
     }
     private func cleanup(_ threadID: UUID) {
+        let ids = approvals.filter { $0.threadID == threadID }.map(\.id)
+        for id in ids { approvalContinuations.removeValue(forKey: id)?.resume(throwing: CancellationError()) }
+        approvals.removeAll { $0.threadID == threadID }
         flushTasks.removeValue(forKey: threadID)?.cancel()
         pendingText.removeValue(forKey: threadID); responseIDs.removeValue(forKey: threadID)
         requests.removeValue(forKey: threadID); runs.removeValue(forKey: threadID); generatingThreadIDs.remove(threadID)
@@ -252,6 +290,82 @@ final class ChatStore: ObservableObject {
               let j = threads[i].messages.firstIndex(where: { $0.id == message }) else { return }
         threads[i].messages[j].status = status; threads[i].messages[j].problem = problem
         threads[i].messages[j].diagnostic = diagnostic; threads[i].messages[j].recordVersion()
+        if status != .streaming, let activities = threads[i].messages[j].toolActivities {
+            threads[i].messages[j].toolActivities = activities.map { var x = $0; if x.state == "running" { x.state = status == .complete ? "complete" : "cancelled"; x.detail = status == .complete ? "已完成" : "已中断（远程操作可能仍在继续）" }; return x }
+            threads[i].messages[j].recordVersion()
+        }
+    }
+    func setToolSettings(_ settings: ToolSettings) {
+        guard !isSending, let i = threads.firstIndex(where: { $0.id == selectedID }) else { return }
+        var value = settings
+        if !canUseHostedTools { value.webSearch = false; value.codeInterpreter = false; value.imageGeneration = false }
+        threads[i].toolSettings = value; persist()
+    }
+    func importFiles(_ urls: [URL], threadID: UUID? = nil) async {
+        guard storageReady, let id = threadID ?? selectedID, let vault = fileVault,
+              let thread = threads.first(where: { $0.id == id }) else { errorText = "原对话已不可用，未添加附件。"; return }
+        guard !importingThreadIDs.contains(id), (thread.draftAttachments?.count ?? 0) + urls.count <= 4 else {
+            errorText = "每条消息最多添加 4 个附件。"; return
+        }
+        importingThreadIDs.insert(id); defer { importingThreadIDs.remove(id) }
+        for url in urls {
+            do {
+                let file = try await Task.detached(priority: .userInitiated) { try vault.importFile(url) }.value
+                guard !Task.isCancelled, let i = threads.firstIndex(where: { $0.id == id }) else { vault.remove(file); return }
+                var files = threads[i].draftAttachments ?? []; files.append(file); threads[i].draftAttachments = files
+                if !persist() { threads[i].draftAttachments?.removeAll { $0.id == file.id }; vault.remove(file) }
+            } catch { errorText = error.localizedDescription }
+        }
+    }
+    func importPhoto(_ data: Data, threadID: UUID? = nil) async {
+        guard let vault = fileVault, data.count <= 10_000_000 else { errorText = "图片过大，最多 10 MB。"; return }
+        let url = vault.directory.appendingPathComponent(UUID().uuidString + ".jpg")
+        do { try data.write(to: url, options: [.atomic, .completeFileProtection]); await importFiles([url], threadID: threadID); try? FileManager.default.removeItem(at: url) }
+        catch { errorText = error.localizedDescription }
+    }
+    func removeDraftFile(_ id: UUID) {
+        guard let i = threads.firstIndex(where: { $0.id == selectedID }) else { return }
+        let previous = referencedFiles(); threads[i].draftAttachments?.removeAll { $0.id == id }
+        if persist() { removeUnused(previous) }
+    }
+    private func referencedFiles() -> [ChatAttachment] {
+        threads.flatMap { ($0.draftAttachments ?? []) + $0.messages.flatMap { ($0.attachments ?? []) + ($0.versions ?? []).flatMap { $0.attachments ?? [] } } }
+    }
+    private func removeUnused(_ previous: [ChatAttachment]) {
+        let current = Set(referencedFiles().map(\.id))
+        for file in previous where !current.contains(file.id) { fileVault?.remove(file) }
+    }
+    private func receive(_ event: ToolEvent, threadID: UUID, runID: UUID) {
+        guard runs[threadID] == runID, let responseID = responseIDs[threadID],
+              let i = threads.firstIndex(where: { $0.id == threadID }),
+              let j = threads[i].messages.firstIndex(where: { $0.id == responseID }) else {
+            if case .file(let file) = event { fileVault?.remove(file) }; return
+        }
+        switch event {
+        case .file(let file):
+            var files = threads[i].messages[j].attachments ?? []; files.append(file); threads[i].messages[j].attachments = files
+        case .activity(let value):
+            var activities = threads[i].messages[j].toolActivities ?? []
+            if let index = activities.firstIndex(where: { $0.id == value.id }) { activities[index] = value }
+            else { activities.append(value) }
+            threads[i].messages[j].toolActivities = activities
+        }
+        persist()
+    }
+    private func requestApproval(threadID: UUID, runID: UUID, name: String, arguments: String) async throws -> Bool {
+        try Task.checkCancellation()
+        guard runs[threadID] == runID else { throw CancellationError() }
+        let value = ToolApproval(threadID: threadID, runID: runID, name: name, arguments: arguments)
+        return try await withCheckedThrowingContinuation { continuation in
+            approvalContinuations[value.id] = continuation; approvals.append(value)
+        }
+    }
+    func resolveApproval(_ id: UUID, allow: Bool) {
+        guard let approval = approvals.first(where: { $0.id == id }) else { return }
+        approvals.removeAll { $0.id == id }
+        let continuation = approvalContinuations.removeValue(forKey: id)
+        if runs[approval.threadID] == approval.runID { continuation?.resume(returning: allow) }
+        else { continuation?.resume(throwing: CancellationError()) }
     }
     @discardableResult private func persist() -> Bool {
         guard storageReady, let fileURL = fileURL else { return false }

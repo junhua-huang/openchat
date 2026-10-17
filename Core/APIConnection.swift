@@ -9,6 +9,12 @@ struct APIConnection: Codable, Identifiable, Equatable {
     var baseURL: String
     var apiKey: String
     var modelIDs: [String]
+    var protocolStyle: String?
+    var usesResponses: Bool { protocolStyle.map { $0 == "responses" } ?? (host.lowercased() == "api.openai.com") }
+    var isOfficialResponses: Bool {
+        guard usesResponses, let url = try? Self.normalizedURL(baseURL) else { return false }
+        return url.host?.lowercased() == "api.openai.com" && url.path == "/v1" && (url.port == nil || url.port == 443)
+    }
 
     var host: String { URL(string: baseURL)?.host ?? baseURL }
 
@@ -20,7 +26,7 @@ struct APIConnection: Codable, Identifiable, Equatable {
         }
         parts.scheme = "https"
         while parts.path.hasSuffix("/") { parts.path.removeLast() }
-        for suffix in ["/chat/completions", "/models"] where parts.path.hasSuffix(suffix) {
+        for suffix in ["/chat/completions", "/responses", "/models"] where parts.path.hasSuffix(suffix) {
             parts.path.removeLast(suffix.count)
             break
         }
@@ -37,6 +43,7 @@ struct APIConnection: Codable, Identifiable, Equatable {
 
     func validated() throws -> APIConnection {
         var result = self
+        guard protocolStyle == nil || ["chat", "responses"].contains(protocolStyle ?? "") else { throw AppFailure.message("API 协议设置无效。") }
         result.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         result.apiKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         result.baseURL = try Self.normalizedURL(baseURL).absoluteString

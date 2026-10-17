@@ -8,6 +8,8 @@ struct ReplyVersion: Codable, Identifiable, Equatable {
     var diagnostic: String?
     var model: String?
     var reasoningEffort: String?
+    var attachments: [ChatAttachment]?
+    var toolActivities: [ToolActivity]?
 }
 
 struct ChatMessage: Codable, Identifiable, Equatable {
@@ -21,12 +23,15 @@ struct ChatMessage: Codable, Identifiable, Equatable {
     var diagnostic: String?
     var model: String?
     var reasoningEffort: String?
+    var attachments: [ChatAttachment]?
+    var toolActivities: [ToolActivity]?
     var versions: [ReplyVersion]?
     var versionIndex: Int?
     var versionCount: Int { versions?.count ?? 1 }
     var activeVersion: Int { versionIndex ?? 0 }
     private var snapshot: ReplyVersion {
-        ReplyVersion(text: text, status: status, problem: problem, diagnostic: diagnostic, model: model, reasoningEffort: reasoningEffort)
+        ReplyVersion(text: text, status: status, problem: problem, diagnostic: diagnostic, model: model, reasoningEffort: reasoningEffort,
+                     attachments: attachments, toolActivities: toolActivities)
     }
     mutating func recordVersion() {
         guard let index = versionIndex, versions?.indices.contains(index) == true else { return }
@@ -38,6 +43,7 @@ struct ChatMessage: Codable, Identifiable, Equatable {
         if versions == nil { versions = [snapshot] }
         text = ""; status = .streaming; problem = nil; diagnostic = nil; self.model = model
         self.reasoningEffort = reasoningEffort
+        attachments = nil; toolActivities = nil
         versionIndex = versions?.count ?? 0
         let version = snapshot
         versions?.append(version)
@@ -50,6 +56,7 @@ struct ChatMessage: Codable, Identifiable, Equatable {
         text = version.text; status = version.status; problem = version.problem
         diagnostic = version.diagnostic; model = version.model; versionIndex = index
         reasoningEffort = version.reasoningEffort
+        attachments = version.attachments; toolActivities = version.toolActivities
         return true
     }
 }
@@ -65,14 +72,16 @@ struct ChatThread: Codable, Identifiable {
     var parentID: UUID?
     // Stored as strings so an unknown future value cannot invalidate an archive.
     var reasoningEfforts: [String: String]?
+    var draftAttachments: [ChatAttachment]?
+    var toolSettings: ToolSettings?
 
     func editing(_ messageID: UUID, text: String) -> ChatThread? {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, let index = messages.firstIndex(where: { $0.id == messageID }),
               messages[index].role == .user else { return nil }
         var branch = ChatThread(title: String(text.prefix(28)), model: model,
-                                messages: Array(messages.prefix(index)), parentID: id, reasoningEfforts: reasoningEfforts)
-        branch.messages.append(ChatMessage(role: .user, text: text))
+                                messages: Array(messages.prefix(index)), parentID: id, reasoningEfforts: reasoningEfforts, toolSettings: toolSettings)
+        branch.messages.append(ChatMessage(role: .user, text: text, attachments: messages[index].attachments))
         return branch
     }
     var markdown: String {

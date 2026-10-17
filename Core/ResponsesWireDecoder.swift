@@ -12,6 +12,7 @@ struct ResponsesWireDecoder {
     private var jsonBytes = 0
     private var deliveredText = false
     private(set) var completed = false
+    private(set) var output: [[String: Any]] = []
 
     init(response: HTTPURLResponse?) { self.response = response }
 
@@ -67,6 +68,9 @@ struct ResponsesWireDecoder {
         let done = try ResponsesClient.handle(payload, response: response, shape: shape) { text in
             onDelta(text)
         }
+        if done, let data = payload.data(using: .utf8),
+           let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let value = event["response"] as? [String: Any] { output = value["output"] as? [[String: Any]] ?? [] }
         // Completed-only terminal events may contain the entire output; do not
         // duplicate it when deltas already delivered the text.
         if done, !deliveredText, let data = payload.data(using: .utf8),

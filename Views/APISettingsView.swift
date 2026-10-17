@@ -42,7 +42,7 @@ struct APISettingsView: View {
                 Button { adding = true } label: { Label("添加 API 连接", systemImage: "plus.circle") }
                     .disabled(!apiConnections.isReady)
             } header: { Text("OpenAI 兼容 API") } footer: {
-                Text("支持使用 Bearer API Key 的 Chat Completions 文本流式接口。API 费用由所选服务商单独收取，不使用 ChatGPT 套餐额度。")
+                Text("支持 Bearer API Key、Chat Completions 或 Responses 流式接口。API 费用由所选服务商单独收取，不使用 ChatGPT 套餐额度。")
             }
             Section {
                 Label("API Key 保存在设备钥匙串中", systemImage: "key.fill")
@@ -68,6 +68,7 @@ struct APIConnectionEditor: View {
     @State private var baseURL: String
     @State private var key: String
     @State private var modelText: String
+    @State private var protocolStyle: String
     @State private var available: [ModelChoice] = []
     @State private var fetching = false
     @State private var fetchTask: Task<Void, Never>?
@@ -80,11 +81,12 @@ struct APIConnectionEditor: View {
         _baseURL = State(initialValue: connection?.baseURL ?? "")
         _key = State(initialValue: connection?.apiKey ?? "")
         _modelText = State(initialValue: connection?.modelIDs.joined(separator: "\n") ?? "")
+        _protocolStyle = State(initialValue: connection?.protocolStyle ?? "auto")
     }
 
     private var draft: APIConnection {
         APIConnection(id: existing?.id ?? UUID(), name: name, baseURL: baseURL, apiKey: key,
-                      modelIDs: APIConnection.parseModels(modelText))
+                      modelIDs: APIConnection.parseModels(modelText), protocolStyle: protocolStyle == "auto" ? nil : protocolStyle)
     }
 
     var body: some View {
@@ -107,8 +109,13 @@ struct APIConnectionEditor: View {
                     .accessibilityLabel("API 基础地址")
                 SecureField("API Key", text: $key)
                     .textInputAutocapitalization(.never).autocorrectionDisabled().privacySensitive()
+                Picker("接口协议", selection: $protocolStyle) {
+                    Text("自动").tag("auto")
+                    Text("Chat Completions").tag("chat")
+                    Text("Responses").tag("responses")
+                }
             } header: { Text("连接信息") } footer: {
-                Text("地址填到 API 版本路径，例如 /v1。程序会添加 /chat/completions；若填写了完整端点，会自动整理。")
+                Text("地址填到 API 版本路径，例如 /v1。自动模式在官方 OpenAI 地址使用 Responses，其他地址使用 Chat Completions。工具和视觉能力仍以模型及服务商支持为准。")
             }.disabled(fetching)
             Section {
                 TextField("每行一个模型 ID，或用逗号分隔", text: $modelText, axis: .vertical)
@@ -168,6 +175,7 @@ struct APIConnectionEditor: View {
         guard !fetching else { return }
         if baseURL != url { key = ""; modelText = "" }
         name = label; baseURL = url; available = []
+        protocolStyle = "auto"
     }
     private func save() {
         do { try apiConnections.save(draft); TouchFeedback.tap(); dismiss() }

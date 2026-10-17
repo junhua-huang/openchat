@@ -6,6 +6,12 @@ private final class OpenResponseProtocol: URLProtocol {
     static var status = 200
     static var payload = Data()
     static var stopped: XCTestExpectation?
+    private let closeLock = NSLock()
+    private var closed = false
+    private func closeOnce() -> Bool {
+        closeLock.lock(); defer { closeLock.unlock() }
+        guard !closed else { return false }; closed = true; return true
+    }
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
@@ -14,8 +20,12 @@ private final class OpenResponseProtocol: URLProtocol {
         if !Self.payload.isEmpty { client?.urlProtocol(self, didLoad: Self.payload) }
         // Deliberately keep the connection open, like a server that has sent a
         // terminal event but does not close its HTTP stream.
+        DispatchQueue.global().asyncAfter(deadline: .now() + 3) { [weak self] in
+            guard let self = self, self.closeOnce() else { return }
+            self.client?.urlProtocol(self, didFailWithError: URLError(.timedOut))
+        }
     }
-    override func stopLoading() { Self.stopped?.fulfill() }
+    override func stopLoading() { if closeOnce() { Self.stopped?.fulfill() } }
 }
 
 final class ReliabilityTests: XCTestCase {
@@ -37,6 +47,17 @@ final class ReliabilityTests: XCTestCase {
             let file = try vault.save(data: Data("内容🙂".utf8), name: name)
             XCTAssertEqual(try Data(contentsOf: vault.exportURL(file)), Data("内容🙂".utf8))
         }
+    }
+    func testLegacyLongFilenameCanStillExportWithoutRewritingTheArchive() throws {
+        let root = directory(); defer { try? FileManager.default.removeItem(at: root) }
+        let vault = try FileVault(accountID: UUID(), root: root)
+        var file = try vault.save(data: Data("旧附件内容".utf8), name: "旧附件.md")
+        file.name = String(repeating: "旧版中文长文件名", count: 16) + ".md"
+        let original = file.name; let url = try vault.exportURL(file)
+        XCTAssertLessThanOrEqual(url.lastPathComponent.utf8.count, 220)
+        XCTAssertEqual(url.pathExtension, "md")
+        XCTAssertEqual(try Data(contentsOf: url), Data("旧附件内容".utf8))
+        XCTAssertEqual(file.name, original)
     }
     @MainActor func testOfficeGenerationAndExtractionRunOffTheUIExecutor() async throws {
         let result = try await FileWork.run {

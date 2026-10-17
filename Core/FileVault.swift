@@ -44,12 +44,14 @@ struct FileVault: Sendable {
     }
     func exportURL(_ attachment: ChatAttachment) throws -> URL {
         let source = try url(attachment)
-        guard FileManager.default.fileExists(atPath: source.path), Self.safeName(attachment.name) == attachment.name else {
+        guard FileManager.default.fileExists(atPath: source.path) else {
             throw AppFailure.message("附件已不可用。")
         }
         let folder = directory.appendingPathComponent("exports", isDirectory: true).appendingPathComponent(attachment.id.uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.protectionKey: FileProtectionType.complete])
-        let target = folder.appendingPathComponent(attachment.name)
+        // Older archives may already contain names over the filesystem byte
+        // limit. Normalize the export name without rewriting their metadata.
+        let target = folder.appendingPathComponent(Self.safeName(attachment.name))
         if !FileManager.default.fileExists(atPath: target.path) {
             do { try FileManager.default.linkItem(at: source, to: target) }
             catch { try data(attachment).write(to: target, options: [.atomic, .completeFileProtection]) }

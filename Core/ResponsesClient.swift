@@ -45,6 +45,12 @@ enum ResponsesClient {
     }
 
     @MainActor
+    // Xcode 26.6 / Swift 6.3.3 crashes in LLVM CoroSplit when this throwing
+    // async loop is specialized for URLSession.AsyncBytes in Release builds.
+    // Keep this network-bound adapter out of optimization; the wire decoder
+    // and the rest of the app retain their normal Release optimizations.
+    @_optimize(none)
+    @inline(never)
     static func consume<Body: AsyncSequence>(_ bytes: Body, response: HTTPURLResponse,
                                              onDelta: (String) -> Void) async throws where Body.Element == UInt8 {
         var decoder = ResponsesWireDecoder(response: response)

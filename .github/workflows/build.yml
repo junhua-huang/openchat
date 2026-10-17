@@ -7,6 +7,30 @@ on:
 permissions:
   contents: read
 jobs:
+  release:
+    name: iOS Release archive
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - name: Select Xcode 26 or newer
+        run: python3 Scripts/select_xcode.py
+      - name: Generate project
+        run: python3 Scripts/generate_project.py
+      - name: Archive Release for iOS
+        run: |
+          xcodebuild -version
+          xcodebuild archive -project LiaoChat.xcodeproj -scheme LiaoChat -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath build/ReleaseCheck.xcarchive \
+            -resultBundlePath build/ReleaseCheck.xcresult CODE_SIGNING_ALLOWED=NO
+      - name: Retain Release build results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-build-results
+          path: build/ReleaseCheck.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
   simulator:
     runs-on: macos-latest
     timeout-minutes: 30

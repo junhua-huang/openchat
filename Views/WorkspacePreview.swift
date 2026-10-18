@@ -77,6 +77,14 @@ struct WorkspacePreview: View {
                         ToolActivity(id: "preview-calc", name: "calculate", state: "complete", detail: "2", textOffset: before.count),
                         ToolActivity(id: "preview-search", name: "search_web", state: "complete", detail: "合成检索结果", textOffset: before.count + middle.count)])]
             }
+            if ProcessInfo.processInfo.arguments.contains("--ui-floating") {
+                let paragraphs = (1...24).map { index in
+                    "悬浮验证第 \(index) 段：消息可以从玻璃控件背后滚过，顶部按钮和底部输入框仍然能够正常操作。"
+                }.joined(separator: "\n\n")
+                thread.messages = [ChatMessage(role: .user, text: "验证悬浮控件与聊天滚动"),
+                                   ChatMessage(role: .assistant, text: paragraphs)]
+                thread.draft = ""
+            }
             try JSONEncoder().encode(ChatArchive(threads: [thread], selectedID: thread.id))
                 .write(to: directory.appendingPathComponent(connection.id.uuidString + ".json"))
         } catch { assertionFailure("Unable to prepare synthetic UI fixture") }

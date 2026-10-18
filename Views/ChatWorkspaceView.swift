@@ -21,6 +21,12 @@ private struct ChatBottomKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
+private struct ChatChromeHeightKey: PreferenceKey {
+    static var defaultValue: [String: CGFloat] = [:]
+    static func reduce(value: inout [String: CGFloat], nextValue: () -> [String: CGFloat]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, height in height })
+    }
+}
 
 struct ChatWorkspaceView: View {
     @EnvironmentObject private var auth: AuthManager
@@ -35,6 +41,8 @@ struct ChatWorkspaceView: View {
     @State private var isNearBottom = true
     @GestureState private var isDragging = false
     @State private var scrollTask: Task<Void, Never>?
+    @State private var headerHeight: CGFloat = 66
+    @State private var composerHeight: CGFloat = 84
     @State private var importing = false
     @State private var showingPhotos = false
     @State private var photos: [PhotosPickerItem] = []
@@ -63,18 +71,20 @@ struct ChatWorkspaceView: View {
     var body: some View {
         ZStack {
             AmbientBackground()
-            VStack(spacing: 0) {
-                header.zIndex(1)
-                if !store.isAPIConnection, auth.activeAccount?.tokens?.permitsInference == false {
-                    notice("请连接并允许使用 ChatGPT 套餐。", icon: "person.crop.circle.badge.exclamationmark") { sheet = .settings }
-                }
-                if let error = store.errorText {
-                    notice(error, icon: "exclamationmark.circle") { store.errorText = nil }
-                }
-                conversation
-            }
+            conversation
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) { composer }
+        // These overlays leave the scroll viewport intact. Only the individual
+        // glass controls intercept touches; there is no full-width bar behind them.
+        .overlay(alignment: .top) {
+            topControls.background(chromeMeasurement("header"))
+        }
+        .overlay(alignment: .bottom) {
+            composer.background(chromeMeasurement("composer"))
+        }
+        .onPreferenceChange(ChatChromeHeightKey.self) { heights in
+            if let height = heights["header"], height.isFinite, height > 0, abs(headerHeight - height) > 0.5 { headerHeight = height }
+            if let height = heights["composer"], height.isFinite, height > 0, abs(composerHeight - height) > 0.5 { composerHeight = height }
+        }
         .chatScrollEdgesHidden()
         .sheet(item: $sheet, onDismiss: {
             if let intent = pendingConnection {
@@ -144,6 +154,24 @@ struct ChatWorkspaceView: View {
         .onDisappear { scrollTask?.cancel(); scrollTask = nil; store.stopAll() }
     }
 
+    private func chromeMeasurement(_ key: String) -> some View {
+        GeometryReader { geometry in
+            Color.clear.preference(key: ChatChromeHeightKey.self, value: [key: geometry.size.height])
+        }.allowsHitTesting(false).accessibilityHidden(true)
+    }
+
+    private var topControls: some View {
+        VStack(spacing: 0) {
+            header
+            if !store.isAPIConnection, auth.activeAccount?.tokens?.permitsInference == false {
+                notice("请连接并允许使用 ChatGPT 套餐。", icon: "person.crop.circle.badge.exclamationmark") { sheet = .settings }
+            }
+            if let error = store.errorText {
+                notice(error, icon: "exclamationmark.circle") { store.errorText = nil }
+            }
+        }
+    }
+
     private var header: some View {
         LiquidCluster {
             HStack(spacing: 8) {
@@ -190,8 +218,10 @@ struct ChatWorkspaceView: View {
                                 edit: { inputFocused = false; sheet = .edit(message) },
                                 chooseVersion: { store.chooseVersion(messageID: message.id, index: $0) }).equatable().id(message.id)
                         }
-                        Color.clear.frame(height: 1).id("bottom").accessibilityHidden(true)
-                    }.padding(.horizontal, 22).padding(.top, 20).padding(.bottom, 20)
+                        // This clearance scrolls with the messages. Its bottom is
+                        // the scroll target, so the last reply stops above the input.
+                        Color.clear.frame(height: composerHeight + 20).id("bottom").accessibilityHidden(true)
+                    }.padding(.horizontal, 22).padding(.top, headerHeight + 20)
                         .frame(maxWidth: 780).frame(maxWidth: .infinity)
                         .background(GeometryReader { geometry in
                             Color.clear.preference(key: ChatBottomKey.self, value: geometry.frame(in: .named("chat-scroll")).maxY)
@@ -233,6 +263,8 @@ struct ChatWorkspaceView: View {
                     scrollTask?.cancel(); scrollTask = nil; requestScroll(proxy)
                 }
                 .onChange(of: viewport.size.height) { _, _ in requestScroll(proxy) }
+                .onChange(of: headerHeight) { _, _ in requestScroll(proxy) }
+                .onChange(of: composerHeight) { _, _ in requestScroll(proxy) }
                 .onChange(of: inputFocused) { _, _ in requestScroll(proxy) }
                 .overlay(alignment: .bottomTrailing) {
                     if !isNearBottom, store.selected?.messages.isEmpty == false {
@@ -240,7 +272,7 @@ struct ChatWorkspaceView: View {
                             followOutput = true
                             requestScroll(proxy)
                         } label: { LiquidIcon(name: "arrow.down") }
-                            .accessibilityLabel("回到最新回复").padding(.trailing, 20).padding(.bottom, 12)
+                            .accessibilityLabel("回到最新回复").padding(.trailing, 20).padding(.bottom, composerHeight + 12)
                     }
                 }
             }

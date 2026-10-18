@@ -63,12 +63,37 @@ final class WorkspaceInteractionTests: XCTestCase {
         XCTAssertFalse(app.buttons["工具已启用，打开工具设置"].exists)
         composer.tap(); XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         let chat = app.scrollViews["chat.conversation"]
-        chat.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.2)).tap()
+        let top = app.buttons["chat.history"].frame.maxY + 30
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: app.frame.width * 0.85, dy: top)).tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
         composer.tap(); XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         chat.swipeDown()
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
         openHistory(app)
+    }
+    @MainActor func testMessagesScrollBehindFloatingControlsWithoutStealingTaps() {
+        let app = launch(extra: ["--ui-floating"])
+        let chat = app.scrollViews["chat.conversation"]
+        let history = app.buttons["chat.history"]
+        let composer = app.descendants(matching: .any).matching(identifier: "chat.composer").firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 5))
+        // A reserved header band would place the scroll view below this button.
+        XCTAssertLessThan(chat.frame.minY, history.frame.minY)
+        XCTAssertGreaterThan(chat.frame.maxY, composer.frame.maxY)
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        let upper = history.frame.maxY + 45
+        let lower = composer.frame.minY - 45
+        let start = origin.withOffset(CGVector(dx: app.frame.width * 0.6, dy: upper + (lower - upper) * 0.4))
+        let end = origin.withOffset(CGVector(dx: app.frame.width * 0.6, dy: upper + (lower - upper) * 0.7))
+        start.press(forDuration: 0.05, thenDragTo: end)
+        let paragraphs = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "悬浮验证第")).allElementsBoundByIndex
+        XCTAssertTrue(paragraphs.contains { $0.frame.intersects(history.frame) })
+        XCTAssertTrue(paragraphs.contains { $0.frame.intersects(composer.frame) })
+        let capture = XCTAttachment(screenshot: app.screenshot()); capture.name = "floating-controls-over-chat"; capture.lifetime = .keepAlways; add(capture)
+        openHistory(app); app.buttons["完成"].tap()
+        app.buttons["chat.add"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        app.buttons["工具与 MCP"].tap()
+        XCTAssertTrue(app.navigationBars["工具与 MCP"].waitForExistence(timeout: 5))
     }
     @MainActor func testFirstSendAndRepeatedStreamingKeepLatestReplyInViewport() {
         let app = launch(extra: ["--ui-empty", "--ui-scroll"])

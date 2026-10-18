@@ -2,6 +2,38 @@ import XCTest
 @testable import LiaoChat
 
 final class WorkingMemoryTests: XCTestCase {
+    @MainActor func testMemoryEntersBothProtocolsAndDisableStopsInjection() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let memory = WorkingMemoryStore(memoryOnly: true)
+        try memory.replace("goal-shared-memory", expectedRevision: 0)
+        for enabled in [true, false] {
+            try memory.setEnabled(enabled)
+            for style in ["chat", "responses"] {
+                let connection = APIConnection(name: "Synthetic", baseURL: "https://synthetic.invalid/v1",
+                    apiKey: "synthetic-key", modelIDs: ["model"], protocolStyle: style)
+                let runtime = ToolRuntime(vault: try FileVault(accountID: UUID(), root: root), files: [], servers: [],
+                    approve: { _, _ in false }, event: { _ in }, workingMemory: memory)
+                func inspect(_ request: URLRequest) throws {
+                    let data = try XCTUnwrap(request.httpBody)
+                    let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+                    let input = try XCTUnwrap(json[style == "responses" ? "input" : "messages"] as? [[String: Any]])
+                    XCTAssertEqual(input.contains { ($0["content"] as? String)?.contains("goal-shared-memory") == true }, enabled)
+                    XCTAssertNil(json["tools"])
+                }
+                try await ChatAgentClient.run(endpoint: AgentEndpoint(token: "synthetic-key", connection: connection),
+                    model: "model", history: [ChatMessage(role: .user, text: "继续任务")], effort: .automatic,
+                    settings: ToolSettings(enabled: false), runtime: runtime, delta: { _ in },
+                    responseTransport: { request in
+                        try inspect(request)
+                        return [["type": "message", "content": [["type": "output_text", "text": "done"]]]]
+                    }, completionTransport: { request, emit in
+                        try inspect(request); emit("done"); return []
+                    })
+            }
+        }
+    }
+
     @MainActor func testPersistenceDisableAndClear() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: folder) }

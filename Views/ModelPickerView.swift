@@ -166,6 +166,16 @@ struct ModelPickerView: View {
         do {
             if choice.connectionID == store.connectionID {
                 onSelect(choice.model.slug)
+                // Keep a model chosen from a fetched catalog available after restart.
+                if var connection = apiConnections.connections.first(where: { $0.id == choice.connectionID }),
+                   !connection.modelIDs.contains(choice.model.slug) {
+                    connection.modelIDs.append(choice.model.slug)
+                    if let efforts = choice.model.reasoningEfforts {
+                        if connection.modelReasoningEfforts == nil { connection.modelReasoningEfforts = [:] }
+                        connection.modelReasoningEfforts?[choice.model.slug] = efforts
+                    }
+                    try apiConnections.save(connection)
+                }
             } else {
                 store.flushDrafts()
                 apiConnections.requestedModel = (choice.connectionID, choice.model.slug)
@@ -200,7 +210,7 @@ struct ModelPickerView: View {
             if source.id == store.connectionID {
                 if includeAPI {
                     await store.loadModels(refresh: true)
-                    if let error = store.errorText { problems[source.id] = error }
+                    problems[source.id] = store.errorText
                 }
                 catalogs[source.id] = store.models
                 continue

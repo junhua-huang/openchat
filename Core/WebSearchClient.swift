@@ -48,7 +48,7 @@ struct WebSearchClient {
         parts.percentEncodedQuery = parts.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
         guard let url = parts.url else { throw AppFailure.message("搜索词无法编码。") }
         var request = URLRequest(url: url); request.timeoutInterval = 25
-        request.setValue("OpenChat/2.0.2", forHTTPHeaderField: "User-Agent")
+        request.setValue("OpenChat/2.0.3", forHTTPHeaderField: "User-Agent")
         request.setValue(bing ? "application/rss+xml, application/xml, text/xml" : "text/html", forHTTPHeaderField: "Accept")
         return request
     }

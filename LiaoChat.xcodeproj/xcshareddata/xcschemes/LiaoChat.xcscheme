@@ -7,6 +7,7 @@
   </BuildActionEntries></BuildAction>
   <TestAction buildConfiguration="Debug" selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger.LLDB" selectedLauncherIdentifier="Xcode.IDEFoundation.Launcher.LLDB" shouldUseLaunchSchemeArgsEnv="YES"><Testables>
     <TestableReference skipped="NO"><BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="9805CBD60EB4F66728D5D195" BuildableName="LiaoChatTests.xctest" BlueprintName="LiaoChatTests" ReferencedContainer="container:LiaoChat.xcodeproj"/></TestableReference>
+    <TestableReference skipped="NO"><BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="4EA0BBFB4641B4E941FBF077" BuildableName="LiaoChatUITests.xctest" BlueprintName="LiaoChatUITests" ReferencedContainer="container:LiaoChat.xcodeproj"/></TestableReference>
   </Testables></TestAction>
   <LaunchAction buildConfiguration="Debug" selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger.LLDB" selectedLauncherIdentifier="Xcode.IDEFoundation.Launcher.LLDB" launchStyle="0" useCustomWorkingDirectory="NO" ignoresPersistentStateOnLaunch="NO" debugServiceExtension="internal" allowLocationSimulation="YES"><BuildableProductRunnable runnableDebuggingMode="0">
     <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="C1E9827DB735CA9BAA54A540" BuildableName="LiaoChat.app" BlueprintName="LiaoChat" ReferencedContainer="container:LiaoChat.xcodeproj"/>

@@ -53,20 +53,23 @@ def configs(name, base):
 
 app_sources = [file(p.relative_to(ROOT).as_posix(), "sourcecode.swift") for folder in ["App", "Core", "Views"] for p in sorted((ROOT / folder).glob("*.swift"))]
 test_sources = [file(p.relative_to(ROOT).as_posix(), "sourcecode.swift") for p in sorted((ROOT / "Tests").glob("*.swift"))]
+ui_sources = [file(p.relative_to(ROOT).as_posix(), "sourcecode.swift") for p in sorted((ROOT / "UITests").glob("*.swift"))]
 asset = file("App/Assets.xcassets", "folder.assetcatalog")
 privacy = file("App/PrivacyInfo.xcprivacy", "text.xml")
 info = file("App/Info.plist", "text.plist.xml")
 fixtures = file("Tests/Fixtures.json", "text.json")
 app_product = add("app-product", "PBXFileReference", explicitFileType="wrapper.application", includeInIndex=0, path="LiaoChat.app", sourceTree="BUILT_PRODUCTS_DIR")
 test_product = add("test-product", "PBXFileReference", explicitFileType="wrapper.cfbundle", includeInIndex=0, path="LiaoChatTests.xctest", sourceTree="BUILT_PRODUCTS_DIR")
-products = add("products", "PBXGroup", children=[app_product, test_product], name="Products", sourceTree="<group>")
+ui_product = add("ui-product", "PBXFileReference", explicitFileType="wrapper.cfbundle", includeInIndex=0, path="LiaoChatUITests.xctest", sourceTree="BUILT_PRODUCTS_DIR")
+ui_group = add("ui-group", "PBXGroup", children=ui_sources, name="UITests", sourceTree="<group>")
+products = add("products", "PBXGroup", children=[app_product, test_product, ui_product], name="Products", sourceTree="<group>")
 tests = add("tests-group", "PBXGroup", children=test_sources + [fixtures], name="Tests", sourceTree="<group>")
-main = add("main-group", "PBXGroup", children=app_sources + [asset, privacy, info, tests, products], sourceTree="<group>")
+main = add("main-group", "PBXGroup", children=app_sources + [asset, privacy, info, tests, ui_group, products], sourceTree="<group>")
 common = {"IPHONEOS_DEPLOYMENT_TARGET": "17.0", "SWIFT_VERSION": "5.0", "SDKROOT": "iphoneos", "CLANG_ENABLE_MODULES": "YES",
           "TARGETED_DEVICE_FAMILY": "1,2", "CODE_SIGN_STYLE": "Automatic", "DEVELOPMENT_TEAM": "",
           "SUPPORTED_PLATFORMS": "iphoneos iphonesimulator", "SUPPORTS_MACCATALYST": "NO"}
 app_settings = dict(common, PRODUCT_BUNDLE_IDENTIFIER="com.example.LiaoChat", PRODUCT_NAME="$(TARGET_NAME)",
-                    INFOPLIST_FILE="App/Info.plist", GENERATE_INFOPLIST_FILE="NO", MARKETING_VERSION="2.0.2",
+                    INFOPLIST_FILE="App/Info.plist", GENERATE_INFOPLIST_FILE="NO", MARKETING_VERSION="2.0.3",
                     CURRENT_PROJECT_VERSION="1", OTHER_LDFLAGS="$(inherited) -lz", ASSETCATALOG_COMPILER_APPICON_NAME="AppIcon",
                     LD_RUNPATH_SEARCH_PATHS="$(inherited) @executable_path/Frameworks")
 test_settings = dict(common, PRODUCT_BUNDLE_IDENTIFIER="com.example.LiaoChatTests", PRODUCT_NAME="$(TARGET_NAME)",
@@ -80,9 +83,15 @@ dependency = add("test-dependency", "PBXTargetDependency", target=app, targetPro
 test = add("test-target", "PBXNativeTarget", buildConfigurationList=configs("test", test_settings),
            buildPhases=[phase("test-sources", "PBXSourcesBuildPhase", test_sources), phase("test-frameworks", "PBXFrameworksBuildPhase", []), phase("test-resources", "PBXResourcesBuildPhase", [fixtures])],
            buildRules=[], dependencies=[dependency], name="LiaoChatTests", productName="LiaoChatTests", productReference=test_product, productType="com.apple.product-type.bundle.unit-test")
-project = add("project", "PBXProject", attributes={"LastUpgradeCheck": "1600", "TargetAttributes": {app: {"CreatedOnToolsVersion": "16.0"}, test: {"CreatedOnToolsVersion": "16.0", "TestTargetID": app}}},
+ui_settings = dict(common, PRODUCT_BUNDLE_IDENTIFIER="com.example.LiaoChatUITests", PRODUCT_NAME="$(TARGET_NAME)",
+                   GENERATE_INFOPLIST_FILE="YES", TEST_TARGET_NAME="LiaoChat",
+                   LD_RUNPATH_SEARCH_PATHS="$(inherited) @executable_path/Frameworks @loader_path/Frameworks")
+ui_test = add("ui-target", "PBXNativeTarget", buildConfigurationList=configs("ui", ui_settings),
+              buildPhases=[phase("ui-sources", "PBXSourcesBuildPhase", ui_sources), phase("ui-frameworks", "PBXFrameworksBuildPhase", []), phase("ui-resources", "PBXResourcesBuildPhase", [])],
+              buildRules=[], dependencies=[dependency], name="LiaoChatUITests", productName="LiaoChatUITests", productReference=ui_product, productType="com.apple.product-type.bundle.ui-testing")
+project = add("project", "PBXProject", attributes={"LastUpgradeCheck": "1600", "TargetAttributes": {app: {"CreatedOnToolsVersion": "16.0"}, test: {"CreatedOnToolsVersion": "16.0", "TestTargetID": app}, ui_test: {"CreatedOnToolsVersion": "16.0", "TestTargetID": app}}},
               buildConfigurationList=configs("project", {}), compatibilityVersion="Xcode 14.0", developmentRegion="zh-Hans",
-              hasScannedForEncodings=0, knownRegions=["zh-Hans", "en", "Base"], mainGroup=main, productRefGroup=products, projectDirPath="", projectRoot="", targets=[app, test])
+              hasScannedForEncodings=0, knownRegions=["zh-Hans", "en", "Base"], mainGroup=main, productRefGroup=products, projectDirPath="", projectRoot="", targets=[app, test, ui_test])
 path = ROOT / "LiaoChat.xcodeproj"
 path.mkdir(exist_ok=True)
 (path / "project.pbxproj").write_text("// !$*UTF8*$!\n" + encode(dict(archiveVersion=1, classes={}, objectVersion=56, objects=objects, rootObject=project)) + "\n")
@@ -97,6 +106,7 @@ scheme = f'''<?xml version="1.0" encoding="UTF-8"?>
   </BuildActionEntries></BuildAction>
   <TestAction buildConfiguration="Debug" selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger.LLDB" selectedLauncherIdentifier="Xcode.IDEFoundation.Launcher.LLDB" shouldUseLaunchSchemeArgsEnv="YES"><Testables>
     <TestableReference skipped="NO"><BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="{test}" BuildableName="LiaoChatTests.xctest" BlueprintName="LiaoChatTests" ReferencedContainer="container:LiaoChat.xcodeproj"/></TestableReference>
+    <TestableReference skipped="NO"><BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="{ui_test}" BuildableName="LiaoChatUITests.xctest" BlueprintName="LiaoChatUITests" ReferencedContainer="container:LiaoChat.xcodeproj"/></TestableReference>
   </Testables></TestAction>
   <LaunchAction buildConfiguration="Debug" selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger.LLDB" selectedLauncherIdentifier="Xcode.IDEFoundation.Launcher.LLDB" launchStyle="0" useCustomWorkingDirectory="NO" ignoresPersistentStateOnLaunch="NO" debugServiceExtension="internal" allowLocationSimulation="YES"><BuildableProductRunnable runnableDebuggingMode="0">
     <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="{app}" BuildableName="LiaoChat.app" BlueprintName="LiaoChat" ReferencedContainer="container:LiaoChat.xcodeproj"/>

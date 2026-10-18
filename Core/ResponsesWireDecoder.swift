@@ -11,6 +11,7 @@ struct ResponsesWireDecoder {
     private var json = ""
     private var jsonBytes = 0
     private var deliveredText = false
+    private var collected = ResponsesOutput()
     private(set) var completed = false
     private(set) var output: [[String: Any]] = []
 
@@ -73,17 +74,20 @@ struct ResponsesWireDecoder {
             throw ResponseFailure.make(response: response, shape: shape, object: event)
         }
         let done = try ResponsesClient.handleEvent(event, response: response, shape: shape, onDelta: onDelta)
+        do { try collected.consume(event) }
+        catch { throw ResponseFailure.make(response: response, shape: "incomplete_tool_output", fallback: error.localizedDescription) }
         let type = event["type"] as? String ?? ""
         for tool in ["web_search_call", "code_interpreter_call", "image_generation_call"] where type.hasPrefix("response." + tool + ".") {
             let id = event["item_id"] as? String ?? tool
             onActivity?(ToolActivity(id: id, name: tool, state: type.hasSuffix("completed") ? "complete" : "running", detail: type.hasSuffix("completed") ? "已完成" : "正在执行"))
         }
-        if done,
-           let value = event["response"] as? [String: Any] { output = value["output"] as? [[String: Any]] ?? [] }
+        if done, let value = event["response"] as? [String: Any] {
+            do { output = try collected.finish(value["output"] as? [[String: Any]] ?? []) }
+            catch { throw ResponseFailure.make(response: response, shape: "incomplete_tool_output", fallback: error.localizedDescription) }
+        }
         // Completed-only terminal events may contain the entire output; do not
         // duplicate it when deltas already delivered the text.
-        if done, !deliveredText,
-           let value = event["response"] as? [String: Any], let output = value["output"] as? [[String: Any]] {
+        if done, !deliveredText {
             for item in output where item["type"] as? String == "message" {
                 for content in item["content"] as? [[String: Any]] ?? [] {
                     if content["type"] as? String == "output_text", let text = content["text"] as? String { onDelta(text) }

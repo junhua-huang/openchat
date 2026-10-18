@@ -110,7 +110,7 @@ final class WebSearchTests: XCTestCase {
             history: [ChatMessage(role: .assistant, text: "我不能按关键词搜索"), ChatMessage(role: .user, text: "今日 AI 新闻")],
             effort: .automatic, settings: ToolSettings(), runtime: runtime, delta: { _ in }, responseTransport: { request in
                 let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [String: Any]); requests.append(body)
-                return requests.count == 1 ? [["type": "function_call", "call_id": "search1", "name": "search_web", "arguments": #"{"query":"今日 AI 2026-10-18","freshness":"day"}"#]] : []
+                return requests.count == 1 ? [["type": "function_call", "call_id": "search1", "name": "search_web", "arguments": #"{"query":"今日 AI 2026-10-18","freshness":"day"}"#]] : [["type": "message", "content": [["type": "output_text", "text": "已找到以下来源。"]]]]
             })
         XCTAssertEqual(searches, 1); XCTAssertEqual(requests.count, 2)
         let tools = try XCTUnwrap(requests.first?["tools"] as? [[String: Any]])

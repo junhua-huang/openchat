@@ -2,7 +2,19 @@ import SwiftUI
 import UniformTypeIdentifiers
 import PhotosUI
 
-private enum WorkspaceSheet: String, Identifiable { case history, models, settings, tools; var id: String { rawValue } }
+private enum WorkspaceSheet: Identifiable {
+    case history, models, settings, tools, edit(ChatMessage), approval(ToolApproval)
+    var id: String {
+        switch self {
+        case .history: return "history"
+        case .models: return "models"
+        case .settings: return "settings"
+        case .tools: return "tools"
+        case .edit(let message): return "edit-" + message.id.uuidString
+        case .approval(let approval): return "approval-" + approval.id.uuidString
+        }
+    }
+}
 private struct ConnectIntent { let accountID: UUID? }
 private struct ChatBottomKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
@@ -17,7 +29,6 @@ struct ChatWorkspaceView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .title2) private var titleSize: CGFloat = 28
     @StateObject private var store: ChatStore
-    @State private var editingMessage: ChatMessage?
     @State private var sheet: WorkspaceSheet?
     @State private var pendingConnection: ConnectIntent?
     @State private var followOutput = true
@@ -26,7 +37,6 @@ struct ChatWorkspaceView: View {
     @State private var importing = false
     @State private var showingPhotos = false
     @State private var photos: [PhotosPickerItem] = []
-    @State private var showingApproval = false
     @State private var photoLoading = false
     @State private var importTarget: UUID?
     @FocusState private var inputFocused: Bool
@@ -53,6 +63,7 @@ struct ChatWorkspaceView: View {
         ZStack {
             AmbientBackground()
             VStack(spacing: 0) {
+                header.zIndex(1)
                 if !store.isAPIConnection, auth.activeAccount?.tokens?.permitsInference == false {
                     notice("请连接并允许使用 ChatGPT 套餐。", icon: "person.crop.circle.badge.exclamationmark") { sheet = .settings }
                 }
@@ -62,7 +73,6 @@ struct ChatWorkspaceView: View {
                 conversation
             }
         }
-        .safeAreaInset(edge: .top, spacing: 0) { header }
         .safeAreaInset(edge: .bottom, spacing: 0) { composer }
         .sheet(item: $sheet, onDismiss: {
             if let intent = pendingConnection {
@@ -84,13 +94,16 @@ struct ChatWorkspaceView: View {
                     sheet = nil
                 }
             case .tools: ToolsSettingsView(store: store)
-            }
-        }
-        .sheet(item: $editingMessage) { message in
-            MessageEditorView(message: message) { text in
-                let sent = store.editAndSend(message.id, text: text)
-                if sent { followOutput = true }
-                return sent
+            case .edit(let message):
+                MessageEditorView(message: message) { text in
+                    let sent = store.editAndSend(message.id, text: text)
+                    if sent { followOutput = true }
+                    return sent
+                }
+            case .approval(let approval):
+                ToolApprovalView(approval: approval) { allow in
+                    store.resolveApproval(approval.id, allow: allow); sheet = nil
+                }
             }
         }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.data], allowsMultipleSelection: true) { result in
@@ -112,12 +125,9 @@ struct ChatWorkspaceView: View {
                 photos = []
             }
         }
-        .sheet(isPresented: $showingApproval) {
-            if let approval = store.selectedApproval {
-                ToolApprovalView(approval: approval) { allow in store.resolveApproval(approval.id, allow: allow); showingApproval = false }
-            }
+        .onChange(of: store.selectedApproval?.id) { _, id in
+            if id == nil, case .approval = sheet { sheet = nil }
         }
-        .onChange(of: store.selectedApproval?.id) { _, id in if id == nil { showingApproval = false } }
         .task { await store.loadModels() }
         .onChange(of: auth.activeID) { _, id in
             if id != nil, store.isAPIConnection {
@@ -132,7 +142,7 @@ struct ChatWorkspaceView: View {
         LiquidCluster {
             HStack(spacing: 8) {
                 Button { inputFocused = false; sheet = .history; TouchFeedback.tap() } label: { LiquidIcon(name: "sidebar.left") }
-                    .accessibilityLabel("历史对话")
+                    .contentShape(Rectangle()).accessibilityLabel("历史对话").accessibilityIdentifier("chat.history")
                 Button { inputFocused = false; sheet = .models; TouchFeedback.tap() } label: {
                     HStack(spacing: 6) {
                         VStack(alignment: .leading, spacing: 2) {
@@ -172,7 +182,7 @@ struct ChatWorkspaceView: View {
                             MessageRow(message: message, fileVault: store.fileVault,
                                 canRetry: message.role == .assistant && store.selected?.messages.last?.id == message.id && !store.isSending,
                                 retry: { followOutput = true; store.retry() },
-                                edit: { inputFocused = false; editingMessage = message },
+                                edit: { inputFocused = false; sheet = .edit(message) },
                                 chooseVersion: { store.chooseVersion(messageID: message.id, index: $0) }).equatable().id(message.id)
                         }
                     }.padding(.horizontal, 22).padding(.top, 20).padding(.bottom, 20)
@@ -220,7 +230,7 @@ struct ChatWorkspaceView: View {
                     }
                 }
             }
-        }
+        }.clipped().contentShape(Rectangle())
     }
 
     private var emptyState: some View {
@@ -251,7 +261,7 @@ struct ChatWorkspaceView: View {
     private var composer: some View {
         VStack(spacing: 8) {
             if let approval = store.selectedApproval {
-                Button { inputFocused = false; showingApproval = true } label: {
+                Button { inputFocused = false; sheet = .approval(approval) } label: {
                     Label("等待确认：" + approval.name, systemImage: "hand.raised").font(.subheadline)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(14).background(Palette.card, in: RoundedRectangle(cornerRadius: 18))
                 }.accessibilityLabel("查看待确认的工具调用")
@@ -271,7 +281,7 @@ struct ChatWorkspaceView: View {
                 TextField("发送消息", text: Binding(get: { draft }, set: { draft = $0 }), axis: .vertical)
                     .lineLimit(1...(dynamicTypeSize.isAccessibilitySize ? 4 : 8)).focused($inputFocused)
                     .padding(.top, 16).padding(.horizontal, 18)
-                    .accessibilityLabel("消息内容").textInputAutocapitalization(.sentences)
+                    .accessibilityLabel("消息内容").accessibilityIdentifier("chat.composer").textInputAutocapitalization(.sentences)
                 HStack(spacing: 10) {
                     Menu {
                         Button("添加文件", systemImage: "doc.badge.plus") { inputFocused = false; importTarget = store.selectedID; importing = true }

@@ -73,8 +73,9 @@ final class AgentToolTests: XCTestCase {
         let connection = APIConnection(name: "Synthetic", baseURL: "https://example.com/v1", apiKey: "synthetic-key", modelIDs: ["m"])
         var requests: [[String: Any]] = []
         try await ChatAgentClient.run(endpoint: AgentEndpoint(token: "synthetic", connection: connection), model: "m", history: [], effort: .automatic,
-            settings: ToolSettings(), runtime: runtime, delta: { _ in }, completionTransport: { request in
+            settings: ToolSettings(), runtime: runtime, delta: { _ in }, completionTransport: { request, emit in
                 requests.append(try self.object(request))
+                if requests.count > 1 { emit("结果是 56。") }
                 return requests.count == 1 ? [ToolCall(id: "call-calc", name: "calculate", arguments: #"{"expression":"(3+5)*7"}"#)] : []
             })
         let messages = try XCTUnwrap(requests.last?["messages"] as? [[String: Any]])

@@ -130,9 +130,12 @@ struct RichMessageView: View, Equatable {
                 switch block {
                 case .prose(let prose): inline(prose).lineSpacing(6)
                 case .heading(let level, let text):
-                    inline(text).font(headingFont(level)).fontWeight(.semibold)
+                    MathText(text, size: level == 1 ? 22 : level == 2 ? 20 : 17,
+                             relativeTo: level == 1 ? .title2 : level == 2 ? .title3 : .headline)
+                        .font(headingFont(level)).fontWeight(.semibold)
                         .padding(.top, level < 3 ? 9 : 3)
                 case .code(let language, let code): CodeBlockView(language: language, code: code)
+                case .math(let expression): DisplayMathView(expression: expression)
                 case .quote(let quote):
                     HStack(alignment: .top, spacing: 12) {
                         RoundedRectangle(cornerRadius: 2).fill(.secondary.opacity(0.4)).frame(width: 3)
@@ -152,10 +155,7 @@ struct RichMessageView: View, Equatable {
             }
         }.frame(maxWidth: .infinity, alignment: .leading).tint(Palette.accent).textSelection(.enabled)
     }
-    private func inline(_ value: String) -> Text {
-        Text((try? AttributedString(markdown: value, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
-             ?? AttributedString(value))
-    }
+    private func inline(_ value: String) -> MathText { MathText(value) }
     private func headingFont(_ level: Int) -> Font {
         switch level { case 1: return .title2; case 2: return .title3; default: return .headline }
     }
@@ -180,8 +180,7 @@ private struct MarkdownTableView: View {
     private func row(_ cells: [String], header: Bool) -> some View {
         HStack(alignment: .top, spacing: 0) {
             ForEach(headers.indices, id: \.self) { column in
-                Text((try? AttributedString(markdown: cells.indices.contains(column) ? cells[column] : "",
-                      options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(""))
+                MathText(cells.indices.contains(column) ? cells[column] : "", size: 15, relativeTo: .subheadline)
                     .font(.subheadline).fontWeight(header ? .semibold : .regular).lineSpacing(4)
                     .frame(width: 142, alignment: cellAlignment(column)).padding(12)
             }

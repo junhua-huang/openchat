@@ -90,6 +90,27 @@ struct WorkspacePreview: View {
                                    ChatMessage(role: .assistant, text: paragraphs)]
                 thread.draft = ""
             }
+            if ProcessInfo.processInfo.arguments.contains("--ui-math") {
+                let math = #"""
+                ## 数学公式
+
+                行内公式：\(z = \frac{x}{1-0.01y}\)，以及 $x_1^2 + y_1^2$。
+
+                $$
+                \sum_{i=1}^{n}i = \frac{n(n+1)}{2}
+                $$
+
+                \[\begin{pmatrix}a & b \\ c & d\end{pmatrix}\]
+
+                | 类型 | 公式 |
+                | --- | --- |
+                | 平方根 | $\sqrt{x^2+y^2}$ |
+
+                `\(这里保持代码原样\)`
+                """#
+                thread.messages = [ChatMessage(role: .assistant, text: math)]
+                thread.draft = ""
+            }
             try JSONEncoder().encode(ChatArchive(threads: [thread], selectedID: thread.id))
                 .write(to: directory.appendingPathComponent(connection.id.uuidString + ".json"))
         } catch { assertionFailure("Unable to prepare synthetic UI fixture") }

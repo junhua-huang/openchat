@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate a dependency-free Xcode project on Windows, Linux, or macOS."""
+"""Generate the Xcode project on Windows, Linux, or macOS."""
 import hashlib
 from pathlib import Path
 import plistlib
@@ -75,9 +75,15 @@ app_settings = dict(common, PRODUCT_BUNDLE_IDENTIFIER="com.example.LiaoChat", PR
 test_settings = dict(common, PRODUCT_BUNDLE_IDENTIFIER="com.example.LiaoChatTests", PRODUCT_NAME="$(TARGET_NAME)",
                      GENERATE_INFOPLIST_FILE="YES", TEST_HOST="$(BUILT_PRODUCTS_DIR)/LiaoChat.app/LiaoChat", BUNDLE_LOADER="$(TEST_HOST)",
                      LD_RUNPATH_SEARCH_PATHS="$(inherited) @executable_path/Frameworks @loader_path/Frameworks")
+math_package = add("math-package", "XCRemoteSwiftPackageReference", repositoryURL="https://github.com/mgriebling/SwiftMath.git",
+                   requirement={"kind": "exactVersion", "version": "1.7.3"})
+math_product = add("math-product", "XCSwiftPackageProductDependency", package=math_package, productName="SwiftMath")
+math_build = add("math-build", "PBXBuildFile", productRef=math_product)
+app_frameworks = phase("app-frameworks", "PBXFrameworksBuildPhase", [])
+objects[app_frameworks]["files"].append(math_build)
 app = add("app-target", "PBXNativeTarget", buildConfigurationList=configs("app", app_settings),
-          buildPhases=[phase("app-sources", "PBXSourcesBuildPhase", app_sources), phase("app-frameworks", "PBXFrameworksBuildPhase", []), phase("app-resources", "PBXResourcesBuildPhase", [asset, privacy])],
-          buildRules=[], dependencies=[], name="LiaoChat", productName="LiaoChat", productReference=app_product, productType="com.apple.product-type.application")
+          buildPhases=[phase("app-sources", "PBXSourcesBuildPhase", app_sources), app_frameworks, phase("app-resources", "PBXResourcesBuildPhase", [asset, privacy])],
+          buildRules=[], dependencies=[], packageProductDependencies=[math_product], name="LiaoChat", productName="LiaoChat", productReference=app_product, productType="com.apple.product-type.application")
 proxy = add("app-proxy", "PBXContainerItemProxy", containerPortal=ref("project"), proxyType=1, remoteGlobalIDString=app, remoteInfo="LiaoChat")
 dependency = add("test-dependency", "PBXTargetDependency", target=app, targetProxy=proxy)
 test = add("test-target", "PBXNativeTarget", buildConfigurationList=configs("test", test_settings),
@@ -91,7 +97,7 @@ ui_test = add("ui-target", "PBXNativeTarget", buildConfigurationList=configs("ui
               buildRules=[], dependencies=[dependency], name="LiaoChatUITests", productName="LiaoChatUITests", productReference=ui_product, productType="com.apple.product-type.bundle.ui-testing")
 project = add("project", "PBXProject", attributes={"LastUpgradeCheck": "1600", "TargetAttributes": {app: {"CreatedOnToolsVersion": "16.0"}, test: {"CreatedOnToolsVersion": "16.0", "TestTargetID": app}, ui_test: {"CreatedOnToolsVersion": "16.0", "TestTargetID": app}}},
               buildConfigurationList=configs("project", {}), compatibilityVersion="Xcode 14.0", developmentRegion="zh-Hans",
-              hasScannedForEncodings=0, knownRegions=["zh-Hans", "en", "Base"], mainGroup=main, productRefGroup=products, projectDirPath="", projectRoot="", targets=[app, test, ui_test])
+              hasScannedForEncodings=0, knownRegions=["zh-Hans", "en", "Base"], mainGroup=main, productRefGroup=products, projectDirPath="", projectRoot="", targets=[app, test, ui_test], packageReferences=[math_package])
 path = ROOT / "LiaoChat.xcodeproj"
 path.mkdir(exist_ok=True)
 (path / "project.pbxproj").write_text("// !$*UTF8*$!\n" + encode(dict(archiveVersion=1, classes={}, objectVersion=56, objects=objects, rootObject=project)) + "\n")

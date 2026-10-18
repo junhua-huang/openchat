@@ -56,11 +56,19 @@ App 被强制关闭或系统回收后无法保证自动续传；本机保留已�
 
 在“工具与 MCP → 发现 MCP”可浏览 DeepWiki、Microsoft Learn、Context7，搜索官方 MCP Registry 的服务名称并分页浏览。中文用途按钮会映射到常用英文关键词。详情页会说明兼容性和授权要求；选“添加连接”预填端点，确认后获取工具目录。推荐及目录收录均不等于安全认证。需要电脑运行、本地 stdio、自定义必需请求头或专属地址的条目会标明限制。
 
-也可以在“工具与 MCP → 添加 MCP 服务器”填写名称、HTTPS MCP 端点和可选 Bearer Token。启用并保存时完成 `initialize`、`notifications/initialized` 和分页 `tools/list`；停用可以直接保存，不要求服务在线。
+也可以在“工具与 MCP → 添加 MCP 服务器”填写名称、HTTPS MCP 端点，选择公开访问 / Token 或 OAuth 登录。启用并保存时完成 `initialize`、`notifications/initialized` 和分页 `tools/list`；停用可以直接保存，不要求服务在线。
+
+OAuth 支持 `WWW-Authenticate` / RFC 9728 资源发现、RFC 8414 与 OIDC 元数据、PKCE S256、授权码交换、resource 绑定与轮换刷新令牌。支持公开客户端的动态注册或预先注册 Client ID；回调地址为 `http://127.0.0.1:51219/auth/callback`。需要在服务提供方登记此回调。授权服务器未声明 PKCE S256、要求 Client Secret 或元数据与资源不匹配时会解释原因并停止。暂未托管 Client ID Metadata Document，也未实现保密客户端代理后端。
+
+OAuth 凭据与 ChatGPT 登录隔离，按连接保存在钥匙串；刷新操作合并并发请求，保存轮换后的令牌。授权失败不自动打开浏览器或重放工具，需要用户在工具设置重新登录。修改端点后必须重新授权。
+
+公开网页最多跟随 5 次 HTTPS 跳转，逐次重建无凭据 GET 请求，拒绝降级 HTTP、URL 凭据和常见内网地址。正文上限 2 MB，按 BOM、HTTP charset 或 HTML charset 解码（包括 GB18030 等），处理 HTML 实体并在后台提取正文。无法识别编码和二进制类型会明确说明；MCP/OAuth 请求仍不跟随重定向。域名解析后的内网 IP、反爬验证、动态 JavaScript 页面尚未实现专门处理。
+
+远程工具 `isError` 返回的文字会显示为服务错误，限制长度并隐藏已知凭据、常见密钥格式与 URL 查询；内容仍是不可信的服务说明。JSON-RPC 协议错误保持简洁提示。不会把失败的工具调用显示为成功。
 
 实现 Streamable HTTP 的 POST JSON / SSE 响应、请求 ID 校验、会话 ID 和协议版本 Header。工具通过 `tools/call` 调用，返回结果再交回模型。每个服务器最多 64 个工具，全部启用工具合计最多 100 个且定义不超过 250 KB。连接更改对下一次请求生效。
 
-本版不启动 iPhone 本地 stdio 服务，不实现旧的 HTTP+SSE 双端点、OAuth 交互登录、sampling、elicitation、roots 或断流重放。需要这些能力的服务器会收到不支持提示。会话失效或断流不会自动重放可能产生副作用的调用；停止生成只保证取消 App 内等待及连接，不保证远程操作回滚。
+本版不启动 iPhone 本地 stdio 服务，不实现旧的 HTTP+SSE 双端点、sampling、elicitation、roots 或断流重放。需要这些能力的服务器会收到不支持提示。会话失效或断流不会自动重放可能产生副作用的调用；停止生成只保证取消 App 内等待及连接，不保证远程操作回滚。
 
 ## 存储与隔离
 
@@ -74,7 +82,7 @@ MCP 凭据保存在设备钥匙串，不进入模型工具定义、聊天 JSON �
 
 ### GitHub MCP
 
-`https://api.githubcopilot.com/mcp/` 需要有效 GitHub 访问令牌，不能匿名连接。在配置页的官方入口创建 Personal Access Token，选择所需仓库与权限，将令牌本身粘贴到 Token 栏，无需添加 `Bearer ` 前缀。配置保存在本机钥匙串；此连接尚不支持网页 OAuth 登录。缺少 Token 会在请求前提示，HTTP 401 表示授权未被接受，403 提示检查访问权限或组织策略。
+`https://api.githubcopilot.com/mcp/` 需要有效 GitHub 访问令牌，不能匿名连接。在配置页的官方入口创建 Personal Access Token，选择所需仓库与权限，将令牌本身粘贴到 Token 栏，无需添加 `Bearer ` 前缀。配置保存在本机钥匙串。也可选择 OAuth 登录，但 GitHub 不支持动态客户端注册，需要自己的 OAuth 应用配置；若授权服务器要求 Client Secret，必须通过可信后端完成交换，不能内置到 iOS App。缺少 Token 会在请求前提示，HTTP 401 表示授权未被接受，403 提示检查访问权限或组织策略。
 
 - [GitHub 官方接入与授权说明](https://github.com/github/github-mcp-server/blob/main/docs/host-integration.md)
 

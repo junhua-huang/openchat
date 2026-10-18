@@ -8,15 +8,15 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate, @unchecked Se
 enum BoundedHTTP {
     static let session: URLSession = {
         let config = URLSessionConfiguration.ephemeral
-        config.httpCookieStorage = nil; config.urlCache = nil
+        config.httpCookieStorage = nil; config.httpShouldSetCookies = false; config.urlCredentialStorage = nil; config.urlCache = nil
         config.timeoutIntervalForRequest = 90; config.timeoutIntervalForResource = 600
         return URLSession(configuration: config, delegate: NoRedirects(), delegateQueue: nil)
     }()
-    static func read(_ request: URLRequest, limit: Int = 2_000_000, using session: URLSession = BoundedHTTP.session) async throws -> (Data, HTTPURLResponse) {
+    static func read(_ request: URLRequest, limit: Int = 2_000_000, using session: URLSession = BoundedHTTP.session, acceptedStatus: Range<Int> = 200..<300) async throws -> (Data, HTTPURLResponse) {
         let (bytes, response) = try await session.bytes(for: request)
         defer { bytes.task.cancel() }
         guard let http = response as? HTTPURLResponse else { throw AppFailure.message("服务没有返回 HTTP 响应。") }
-        guard (200..<300).contains(http.statusCode) else {
+        guard acceptedStatus.contains(http.statusCode) else {
             throw AppFailure.message("请求失败（HTTP \(http.statusCode)）。请检查地址、权限和服务状态。")
         }
         if response.expectedContentLength > Int64(limit) { throw AppFailure.message("服务返回的数据超过大小限制。") }

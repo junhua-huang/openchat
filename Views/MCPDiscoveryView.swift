@@ -80,7 +80,7 @@ private struct MCPListingDetail: View {
                     Button(existing == nil ? "添加连接" : "编辑已有连接") { adding = true }.disabled(!connections.ready)
                 }
                 if let raw = listing.website, let url = URL(string: raw) { Link("查看服务商文档", destination: url) }
-            } footer: { Text("添加后会连接此服务并读取工具目录；具体工具调用仍需逐次确认。仅支持公开访问或 Bearer Token，暂不支持 OAuth 登录。") }
+            } footer: { Text("添加后会连接此服务并读取工具目录；具体工具调用仍需逐次确认。支持公开访问、Bearer Token 或浏览器 OAuth 登录；OAuth 需要服务支持公开客户端及 PKCE。") }
         }.scrollContentBackground(.hidden).background(Palette.paper)
             .navigationTitle("服务详情").navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $adding) {

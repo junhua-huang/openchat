@@ -97,15 +97,22 @@ final class WorkspaceInteractionTests: XCTestCase {
     }
     @MainActor func testFirstSendAndRepeatedStreamingKeepLatestReplyInViewport() {
         let app = launch(extra: ["--ui-empty", "--ui-scroll"])
-        let composer = app.descendants(matching: .any).matching(identifier: "chat.composer").firstMatch
+        let composer = app.textFields["chat.composer"]
         for index in 0..<3 {
             composer.tap(); composer.typeText("测试 \(index)\n输入框展开后发送")
             app.buttons["发送消息"].tap()
             let tail = app.staticTexts["滚动验收结束 \(index * 2 + 1)"]
             XCTAssertTrue(tail.waitForExistence(timeout: 10))
             // Wait for the coalesced post-layout scroll, then verify real geometry.
-            let visible = NSPredicate { _, _ in tail.isHittable && tail.frame.midY > app.buttons["chat.history"].frame.maxY && tail.frame.maxY < composer.frame.minY }
-            expectation(for: visible, evaluatedWith: nil); waitForExpectations(timeout: 5)
+            let visible = NSPredicate { _, _ in
+                // Each native AX lookup can take seconds on a loaded runner.
+                // Read each frame once; geometry verifies the actual viewport.
+                let replyFrame = tail.frame
+                let headerFrame = app.buttons["chat.history"].frame
+                let composerFrame = composer.frame
+                return !replyFrame.isEmpty && replyFrame.midY > headerFrame.maxY && replyFrame.maxY < composerFrame.minY
+            }
+            expectation(for: visible, evaluatedWith: nil); waitForExpectations(timeout: 15)
             let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "stream-after-send-\(index)"; shot.lifetime = .keepAlways; add(shot)
         }
         let chat = app.scrollViews["chat.conversation"]
@@ -158,8 +165,13 @@ final class WorkspaceInteractionTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["服务详情"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["添加连接"].waitForExistence(timeout: 5))
     }
-    @MainActor func testGitHubMCPExplainsRequiredTokenBeforeNetwork() {
+    @MainActor func testGitHubMCPOffersOAuthConfigurationAndTokenAlternative() {
         let app = launch(extra: ["--ui-github"], workspace: false)
+        XCTAssertTrue(app.textFields["mcp.oauth-client-id"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons["登录并连接"].exists)
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "mcp.oauth-callback").firstMatch.exists)
+        app.buttons["mcp.auth-method"].tap()
+        app.buttons["公开访问 / Token"].tap()
         let token = app.secureTextFields["mcp.token"]
         XCTAssertTrue(token.waitForExistence(timeout: 15))
         XCTAssertTrue(token.label.contains("必填") || token.placeholderValue?.contains("必填") == true)

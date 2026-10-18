@@ -48,13 +48,15 @@ private struct Arithmetic {
     private let searchClient: WebSearchClient
     private let webpageTransport: (URLRequest) async throws -> (Data, HTTPURLResponse)
     private var searchEnabled = false
+    private let authorizeMCP: ((MCPServer) async throws -> MCPServer)?
     init(vault: FileVault, files: [ChatAttachment], servers: [MCPServer],
          approve: @escaping (String, String) async throws -> Bool, event: @escaping (ToolEvent) -> Void,
          searchClient: WebSearchClient = WebSearchClient(),
-         webpageTransport: @escaping (URLRequest) async throws -> (Data, HTTPURLResponse) = { try await BoundedHTTP.read($0) }) {
+         webpageTransport: @escaping (URLRequest) async throws -> (Data, HTTPURLResponse) = { try await BoundedHTTP.read($0, acceptedStatus: 200..<400) },
+         authorizeMCP: ((MCPServer) async throws -> MCPServer)? = nil) {
         self.vault = vault; self.files = files; self.servers = servers; self.approve = approve; self.event = event
         self.searchClient = searchClient
-        self.webpageTransport = webpageTransport
+        self.webpageTransport = webpageTransport; self.authorizeMCP = authorizeMCP
     }
     static func calculate(_ expression: String) throws -> Double {
         guard expression.count <= 2048 else { throw AppFailure.message("算式过长。") }
@@ -189,23 +191,18 @@ private struct Arithmetic {
                       let host = url.host, !host.isEmpty, url.user == nil, url.password == nil else { throw AppFailure.message("请输入公开 HTTPS 网页地址。") }
                 try Task.checkCancellation()
                 var request = URLRequest(url: url); request.timeoutInterval = 30
-                let (data, response) = try await webpageTransport(request)
+                let (data, response) = try await WebPageClient.read(request, transport: webpageTransport)
                 try Task.checkCancellation()
-                guard ["text/html", "text/plain", "application/json"].contains(response.mimeType ?? ""), let html = String(data: data, encoding: .utf8) else {
-                    throw AppFailure.message("网页不是可读取的 UTF-8 文本。")
-                }
-                let text = html.replacingOccurrences(of: "(?is)<(script|style|noscript)\\b[^>]*>.*?</\\1>", with: "", options: .regularExpression)
-                    .replacingOccurrences(of: "(?s)<[^>]+>", with: " ", options: .regularExpression)
-                    .replacingOccurrences(of: "[ \\t]{2,}", with: " ", options: .regularExpression)
-                output = "Source: \(url.absoluteString)\n网页文本（最多 40000 字符，可能省略动态内容）：\n" + text.prefix(40000)
+                let text = try await FileWork.run { try WebPageClient.text(data, response: response) }
+                output = "Source: \(response.url?.absoluteString ?? url.absoluteString)\n网页文本（最多 40000 字符，可能省略动态内容）：\n" + text.prefix(40000)
             default:
                 guard let (server, tool) = remote[call.name] else { throw AppFailure.message("工具未启用或已不存在。") }
                 guard try await approve(server.name + " / " + tool.name, call.arguments) else { throw AppFailure.message("用户拒绝了此 MCP 调用。") }
                 try Task.checkCancellation()
-                let client = clients[server.id] ?? MCPClient(server: server); clients[server.id] = client
+                let client = clients[server.id] ?? MCPClient(server: server, authorize: authorizeMCP); clients[server.id] = client
                 let result = try await client.call(name: tool.name, arguments: args)
                 try Task.checkCancellation()
-                if result["isError"] as? Bool == true { throw AppFailure.message("MCP 工具报告执行失败。") }
+                if result["isError"] as? Bool == true { throw AppFailure.message(MCPToolFailure.describe(result, secrets: [server.token, client.server.oauth?.accessToken ?? "", client.server.oauth?.refreshToken ?? ""])) }
                 var texts: [String] = []
                 for content in result["content"] as? [[String: Any]] ?? [] {
                     if let text = content["text"] as? String { texts.append(String(text.prefix(30000))) }

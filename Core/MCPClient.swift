@@ -16,6 +16,9 @@ struct MCPServer: Codable, Identifiable, Equatable {
     var token: String = ""
     var enabled = false
     var tools: [MCPTool] = []
+    var oauth: MCPOAuthCredentials? = nil
+    var oauthClientID: String? = nil
+    var usesOAuth: Bool? = nil
     static let gitHubTokenRequired = "GitHub MCP 需要访问令牌。请创建 GitHub Personal Access Token，填入 Token 栏后重试。"
     static func isGitHubEndpoint(_ text: String) -> Bool {
         guard let url = URL(string: text.trimmingCharacters(in: .whitespacesAndNewlines)),
@@ -37,6 +40,7 @@ struct MCPServer: Codable, Identifiable, Equatable {
     @Published private(set) var servers: [MCPServer] = []
     @Published private(set) var ready = false
     @Published var problem: String?
+    private var refreshes: [UUID: Task<MCPServer, Error>] = [:]
     private let memoryOnly: Bool
     private var query: [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
@@ -62,7 +66,22 @@ struct MCPServer: Codable, Identifiable, Equatable {
         if let i = next.firstIndex(where: { $0.id == value.id }) { next[i] = value } else { next.append(value) }
         try persist(next)
     }
-    func delete(_ id: UUID) throws { try persist(servers.filter { $0.id != id }) }
+    func authorized(_ server: MCPServer) async throws -> MCPServer {
+        guard let current = servers.first(where: { $0.id == server.id }), current.enabled,
+              current.endpoint == server.endpoint, current.oauth != nil else { throw AppFailure.message("MCP 连接已改变，请重新连接。") }
+        if let task = refreshes[server.id] { return try await task.value }
+        let task = Task { @MainActor in
+            let updated = try await MCPOAuthClient().refreshed(current)
+            try Task.checkCancellation()
+            guard servers.first(where: { $0.id == current.id }) == current else { throw CancellationError() }
+            if updated != current { try save(updated) }
+            return updated
+        }
+        refreshes[server.id] = task
+        defer { refreshes[server.id] = nil }
+        return try await task.value
+    }
+    func delete(_ id: UUID) throws { refreshes[id]?.cancel(); try persist(servers.filter { $0.id != id }) }
     private func persist(_ next: [MCPServer]) throws {
         guard ready else { throw AppFailure.message("MCP 安全存储尚未就绪。") }
         if memoryOnly { servers = next; problem = nil; return }
@@ -79,12 +98,13 @@ struct MCPServer: Codable, Identifiable, Equatable {
 }
 
 @MainActor final class MCPClient {
-    let server: MCPServer
+    private(set) var server: MCPServer
+    private let authorize: ((MCPServer) async throws -> MCPServer)?
     private let session: URLSession
     private var sessionID: String?
     private var version = "2025-06-18"
     private var initialized = false
-    init(server: MCPServer, session: URLSession = BoundedHTTP.session) { self.server = server; self.session = session }
+    init(server: MCPServer, session: URLSession = BoundedHTTP.session, authorize: ((MCPServer) async throws -> MCPServer)? = nil) { self.server = server; self.session = session; self.authorize = authorize }
 
     nonisolated static func rpcResult(_ data: Data, id: String) throws -> [String: Any]? {
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -102,10 +122,12 @@ struct MCPServer: Codable, Identifiable, Equatable {
     private func request(method: String, params: [String: Any], id: String? = nil) throws -> URLRequest {
         guard server.token.count <= 8192, !server.token.contains(where: { $0.isWhitespace }) else { throw AppFailure.message("MCP Token 无效。") }
         var request = URLRequest(url: try BoundedHTTP.endpoint(server.endpoint)); request.httpMethod = "POST"
-        if MCPServer.isGitHubEndpoint(server.endpoint), server.token.isEmpty { throw AppFailure.message(MCPServer.gitHubTokenRequired) }
+        if server.usesOAuth == true, server.oauth == nil { throw AppFailure.message("请先在工具设置中完成 MCP OAuth 登录。") }
+        if MCPServer.isGitHubEndpoint(server.endpoint), server.token.isEmpty, server.oauth == nil { throw AppFailure.message(MCPServer.gitHubTokenRequired) }
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json, text/event-stream", forHTTPHeaderField: "Accept")
-        if !server.token.isEmpty { request.setValue("Bearer " + server.token, forHTTPHeaderField: "Authorization") }
+        let bearer = server.oauth?.accessToken ?? server.token
+        if !bearer.isEmpty { request.setValue("Bearer " + bearer, forHTTPHeaderField: "Authorization") }
         if let sessionID = sessionID { request.setValue(sessionID, forHTTPHeaderField: "Mcp-Session-Id") }
         if initialized { request.setValue(version, forHTTPHeaderField: "MCP-Protocol-Version") }
         var body: [String: Any] = ["jsonrpc": "2.0", "method": method, "params": params]
@@ -121,7 +143,7 @@ struct MCPServer: Codable, Identifiable, Equatable {
         let detail: String
         switch status {
         case 401:
-            detail = github ? "GitHub 未接受此访问令牌。请检查 PAT 是否正确、过期或已撤销，再更新 Token。" : "此 MCP 服务需要授权，或当前 Token 已失效。请填写有效 Token；当前版本不支持 MCP 网页 OAuth 登录。"
+            detail = github ? "GitHub 未接受此访问令牌。请检查 PAT 是否正确、过期或已撤销，再更新 Token。" : "此 MCP 服务需要授权，或当前 Token 已失效。请填写有效 Token；或在工具设置中重新 OAuth 登录。"
         case 403:
             detail = github ? "GitHub 拒绝访问。请检查 PAT 的仓库访问权限，以及组织的 SSO 授权或访问策略。" : "此 MCP 服务拒绝访问，请检查 Token 权限和服务端访问策略。"
         case 404:
@@ -136,6 +158,10 @@ struct MCPServer: Codable, Identifiable, Equatable {
         throw AppFailure.message(detail + "（HTTP \(status)）")
     }
     private func rpc(_ method: String, _ params: [String: Any]) async throws -> [String: Any] {
+        if server.oauth != nil {
+            if let authorize = authorize { server = try await authorize(server) }
+            else { server = try await MCPOAuthClient(session: session).refreshed(server) }
+        }
         let id = UUID().uuidString; let request = try request(method: method, params: params, id: id)
         let (bytes, response) = try await session.bytes(for: request)
         defer { bytes.task.cancel() }
@@ -162,7 +188,7 @@ struct MCPServer: Codable, Identifiable, Equatable {
     func connect() async throws {
         if initialized { return }
         let result = try await rpc("initialize", ["protocolVersion": version, "capabilities": [:],
-            "clientInfo": ["name": "OpenChat iOS", "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.1.3"]])
+            "clientInfo": ["name": "OpenChat iOS", "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.2.0"]])
         guard let negotiated = result["protocolVersion"] as? String,
               ["2025-03-26", "2025-06-18", "2025-11-25"].contains(negotiated) else {
             throw AppFailure.message("MCP 服务协商的协议版本暂不支持。")

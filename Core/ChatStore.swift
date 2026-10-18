@@ -246,7 +246,11 @@ final class ChatStore: ObservableObject {
                         approve: { [weak self] name, arguments in
                             guard let self = self else { throw CancellationError() }
                             return try await self.requestApproval(threadID: threadID, runID: runID, name: name, arguments: arguments)
-                        }, event: { [weak self] event in self?.receive(event, threadID: threadID, runID: runID) })
+                        }, event: { [weak self] event in self?.receive(event, threadID: threadID, runID: runID) },
+                        authorizeMCP: { [weak self] server in
+                            guard let self = self else { throw CancellationError() }
+                            return try await self.mcpConnections.authorized(server)
+                        })
                     if let agent = self.agentTransport { try await agent(runtime, onDelta) }
                     else {
                         try await ChatAgentClient.run(endpoint: AgentEndpoint(token: token, connection: self.apiConnection), model: model,

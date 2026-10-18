@@ -8,9 +8,9 @@ final class LoopbackServer {
     private var connections: [UUID: NWConnection] = [:]
     var accept: ((URL) -> Bool)?
 
-    func start() async throws -> URL {
+    func start(port: UInt16? = nil) async throws -> URL {
         let parameters = NWParameters.tcp
-        parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
+        parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: port.flatMap { NWEndpoint.Port(rawValue: $0) } ?? .any)
         let server = try NWListener(using: parameters)
         listener = server
         return try await withCheckedThrowingContinuation { continuation in

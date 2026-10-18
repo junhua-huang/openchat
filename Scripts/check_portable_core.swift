@@ -8,7 +8,7 @@ enum AppFailure: LocalizedError {
 
 // Runs directly on the macOS host with swiftc, without an iOS simulator.
 @main struct PortableCoreChecks {
-    static func main() throws {
+    @MainActor static func main() throws {
         var count = 0
         func check(_ condition: @autoclosure () -> Bool, _ message: String) {
             precondition(condition(), message)
@@ -71,6 +71,30 @@ enum AppFailure: LocalizedError {
         check(restoredMemory == saved, "Memory must round-trip")
         let cleared = try saved.replacing("", expectedRevision: 1)
         check(cleared.context == nil, "Cleared memory must not enter context")
+
+        let draft = WorkingMemoryDraft(text: "尚未保存的编辑", baseText: saved.text, baseRevision: saved.revision)
+        let restoredDraft = try JSONDecoder().decode(WorkingMemoryDraft.self, from: JSONEncoder().encode(draft))
+        check(restoredDraft == draft, "Memory edit draft must round-trip independently")
+        let sharedJSON = String(decoding: try JSONEncoder().encode(saved), as: UTF8.self)
+        check(!sharedJSON.contains(draft.text), "Draft must never enter saved memory")
+        let a = UUID(); let b = UUID()
+        let cache = ModelCatalogCache(defaults: nil)
+        cache.save([ModelChoice(slug: "a", display_name: "Model A", visibility: nil, reasoningEfforts: ["high"]),
+                    ModelChoice(slug: "a", display_name: "Duplicate", visibility: nil)], for: a)
+        cache.save([ModelChoice(slug: "b", display_name: "Model B", visibility: nil)], for: b)
+        check(cache.models(for: a).map(\.slug) == ["a"], "Catalog must deduplicate model IDs")
+        check(cache.models(for: a).first?.reasoningEfforts == ["high"], "Cache must retain reasoning levels")
+        check(cache.models(for: b).map(\.slug) == ["b"], "Catalogs must stay separated by connection")
+        let merged = ModelCatalog.merged(manual: ["manual", "a"], remote: cache.models(for: a))
+        check(merged.map(\.slug) == ["manual", "a"], "Manual models and their order must survive refresh")
+        check(merged.last?.display_name == "Model A", "Remote metadata must enrich configured models")
+        check(ReplyProgress.current(approval: true, paused: false, runningTool: "create_file", hasText: false) == .approval,
+              "Approval wait must not claim inference is running")
+        check(ReplyProgress.current(approval: false, paused: true, runningTool: "create_file", hasText: true) == .paused,
+              "Foreground wait must show paused")
+        check(ReplyProgress.current(approval: false, paused: false, runningTool: "update_working_memory", hasText: true).title == "正在更新工作记忆…",
+              "Memory activity must use readable titles")
+        check(ComposerDraft.insertingSuggestion("建议", into: "原草稿") == "原草稿\n\n建议", "Suggestions must preserve unsent text")
 
         let inline = #"中文 \(\frac{x}{1-0.01y}\) 与 $z_1^2$"#
         check(MessageMath.parts(inline).filter { if case .math = $0 { return true }; return false }.count == 2,

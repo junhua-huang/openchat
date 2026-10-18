@@ -4,13 +4,14 @@ import PhotosUI
 import UIKit
 
 private enum WorkspaceSheet: Identifiable {
-    case history, models, settings, tools, edit(ChatMessage), approval(ToolApproval)
+    case history, models, settings, tools, memory, edit(ChatMessage), approval(ToolApproval)
     var id: String {
         switch self {
         case .history: return "history"
         case .models: return "models"
         case .settings: return "settings"
         case .tools: return "tools"
+        case .memory: return "memory"
         case .edit(let message): return "edit-" + message.id.uuidString
         case .approval(let approval): return "approval-" + approval.id.uuidString
         }
@@ -112,6 +113,7 @@ struct ChatWorkspaceView: View {
                     sheet = nil
                 }
             case .tools: ToolsSettingsView(store: store)
+            case .memory: NavigationStack { WorkingMemoryView(memory: store.workingMemory) }
             case .edit(let message):
                 MessageEditorView(message: message) { text in
                     let sent = store.editAndSend(message.id, text: text)
@@ -127,13 +129,17 @@ struct ChatWorkspaceView: View {
         .fileImporter(isPresented: $importing, allowedContentTypes: [.data], allowsMultipleSelection: true) { result in
             switch result {
             case .success(let urls): let target = importTarget; Task { await store.importFiles(urls, threadID: target) }
-            case .failure(let error): store.errorText = error.localizedDescription
+            case .failure(let error):
+                let value = error as NSError
+                if value.domain != NSCocoaErrorDomain || value.code != NSUserCancelledError { store.errorText = error.localizedDescription }
             }
         }
-        .photosPicker(isPresented: $showingPhotos, selection: $photos, maxSelectionCount: 4, matching: .images)
+        .photosPicker(isPresented: $showingPhotos, selection: $photos,
+                      maxSelectionCount: max(1, 4 - (store.selected?.draftAttachments?.count ?? 0)), matching: .images)
         .onChange(of: photos) { _, items in
             guard !items.isEmpty else { return }
-            let target = store.selectedID; photoLoading = true
+            guard let target = importTarget else { photos = []; store.errorText = "原对话已不可用，请重新选择照片。"; return }
+            photoLoading = true
             Task {
                 defer { photoLoading = false }
                 for item in items {
@@ -186,7 +192,14 @@ struct ChatWorkspaceView: View {
                 notice("请连接并允许使用 ChatGPT 套餐。", icon: "person.crop.circle.badge.exclamationmark") { sheet = .settings }
             }
             if let error = store.errorText {
-                notice(error, icon: "exclamationmark.circle") { store.errorText = nil }
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.circle").foregroundStyle(Palette.accent).padding(.top, 12)
+                    Text(error).font(.caption).fixedSize(horizontal: false, vertical: true).padding(.vertical, 12)
+                    Spacer(minLength: 0)
+                    Button { store.errorText = nil } label: { Image(systemName: "xmark").frame(width: 44, height: 44) }
+                        .accessibilityLabel("关闭提示")
+                }.padding(.leading, 14).background(Palette.card, in: RoundedRectangle(cornerRadius: 18))
+                    .padding(.horizontal, 20).padding(.vertical, 5)
             }
         }
     }
@@ -206,7 +219,7 @@ struct ChatWorkspaceView: View {
                         Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
                     }.padding(.horizontal, 12).frame(minHeight: 48)
                         .foregroundStyle(.primary).liquidSurface(radius: 24, interactive: true)
-                }.disabled(store.isSending).accessibilityLabel("选择模型与推理强度，当前为 \(modelName)，\(store.selectedEffort.title)").layoutPriority(1)
+                }.disabled(store.isSending || photoLoading).accessibilityLabel("选择模型与推理强度，当前为 \(modelName)，\(store.selectedEffort.title)").layoutPriority(1)
                 Spacer(minLength: 0)
                 Button(action: startNewConversation) {
                     LiquidIcon(name: "square.and.pencil").contentShape(Rectangle())
@@ -214,6 +227,7 @@ struct ChatWorkspaceView: View {
                 Menu {
                     Button("账户与设置", systemImage: "person.crop.circle") { inputFocused = false; sheet = .settings }
                     Button("工具与 MCP", systemImage: "wrench.and.screwdriver") { inputFocused = false; sheet = .tools }
+                    Button("共享工作记忆", systemImage: "brain") { inputFocused = false; sheet = .memory }
                     if let thread = store.selected, !thread.messages.isEmpty {
                         ShareLink(item: thread.markdown) { Label("分享整段对话", systemImage: "square.and.arrow.up") }
                         Button(thread.isPinned == true ? "取消置顶" : "置顶对话", systemImage: "pin") { store.togglePin(thread.id) }
@@ -232,6 +246,8 @@ struct ChatWorkspaceView: View {
                         ForEach(store.selected?.messages ?? []) { message in
                             MessageRow(message: message, fileVault: store.fileVault,
                                 canRetry: message.role == .assistant && store.selected?.messages.last?.id == message.id && !store.isSending,
+                                waitingForApproval: message.status == .streaming && store.selectedApproval != nil,
+                                waitingForForeground: message.status == .streaming && store.isWaitingForForeground,
                                 retry: { followOutput = true; store.retry() },
                                 edit: { inputFocused = false; sheet = .edit(message) },
                                 chooseVersion: { store.chooseVersion(messageID: message.id, index: $0) }).equatable().id(message.id)
@@ -337,6 +353,14 @@ struct ChatWorkspaceView: View {
             Text("有什么可以帮你？").font(.system(size: titleSize, weight: .semibold)).multilineTextAlignment(.center)
             Text(store.isAPIConnection ? store.connectionName : "从一个问题开始。")
                 .font(.subheadline).foregroundStyle(.secondary)
+            if store.models.isEmpty {
+                if store.isLoadingModels { ProgressView("正在获取模型…") }
+                else {
+                    if let notice = store.modelCatalogNotice { Text(notice).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center) }
+                    Button("重新获取模型") { Task { await store.loadModels(refresh: true) } }
+                        .buttonStyle(.bordered).accessibilityIdentifier("chat.reload-models")
+                }
+            }
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                 suggestion("pencil.and.outline", "写作润色", "让表达更清楚", "帮我润色一段文字，保留我的语气。请让我先发给你。")
                 suggestion("lightbulb", "解释概念", "把复杂的说简单", "我想理解一个复杂概念。请先问我是什么，再用生活中的例子解释。")
@@ -346,7 +370,7 @@ struct ChatWorkspaceView: View {
         }.padding(.top, 55).padding(.bottom, 30).frame(maxWidth: .infinity)
     }
     private func suggestion(_ icon: String, _ title: String, _ detail: String, _ prompt: String) -> some View {
-        Button { draft = prompt; inputFocused = true; TouchFeedback.tap() } label: {
+        Button { draft = ComposerDraft.insertingSuggestion(prompt, into: draft); inputFocused = true; TouchFeedback.tap() } label: {
             VStack(alignment: .leading, spacing: 10) {
                 Image(systemName: icon).font(.system(size: 18)).foregroundStyle(.secondary)
                 Text(title).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
@@ -379,7 +403,9 @@ struct ChatWorkspaceView: View {
                 HStack(alignment: .bottom, spacing: 8) {
                     Menu {
                         Button("添加文件", systemImage: "doc.badge.plus") { inputFocused = false; importTarget = store.selectedID; importing = true }
-                        Button("选择照片", systemImage: "photo") { inputFocused = false; showingPhotos = true }
+                            .disabled((store.selected?.draftAttachments?.count ?? 0) >= 4)
+                        Button("选择照片", systemImage: "photo") { inputFocused = false; importTarget = store.selectedID; showingPhotos = true }
+                            .disabled((store.selected?.draftAttachments?.count ?? 0) >= 4)
                         Button("工具与 MCP", systemImage: "wrench.and.screwdriver") { inputFocused = false; sheet = .tools }
                     } label: {
                         LiquidIcon(name: "plus")

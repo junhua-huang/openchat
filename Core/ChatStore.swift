@@ -13,6 +13,7 @@ final class ChatStore: ObservableObject {
     @Published private(set) var selectedModel = ""
     @Published private(set) var generatingThreadIDs: Set<UUID> = []
     @Published private(set) var isLoadingModels = false
+    @Published private(set) var modelCatalogNotice: String?
     @Published private(set) var storageReady = false
     @Published var errorText: String?
     @Published private(set) var approvals: [ToolApproval] = []
@@ -21,6 +22,8 @@ final class ChatStore: ObservableObject {
     let mcpConnections: MCPConnections
     let lifecycle: GenerationLifecycle
     let workingMemory: WorkingMemoryStore
+    let modelCatalogCache: ModelCatalogCache
+    private let modelLoader: (@MainActor () async throws -> [ModelChoice])?
     private(set) var fileVault: FileVault?
     private var approvalContinuations: [UUID: CheckedContinuation<Bool, Error>] = [:]
     private let accountID: UUID
@@ -42,6 +45,7 @@ final class ChatStore: ObservableObject {
     private let checkpointInterval: UInt64
     var selected: ChatThread? { threads.first { $0.id == selectedID } }
     var isSending: Bool { selectedID.map { generatingThreadIDs.contains($0) } ?? false }
+    var hasActiveWork: Bool { !generatingThreadIDs.isEmpty || !importingThreadIDs.isEmpty }
     var isImporting: Bool { selectedID.map { importingThreadIDs.contains($0) } ?? false }
     var selectedApproval: ToolApproval? { approvals.first { $0.threadID == selectedID } }
     var toolSettings: ToolSettings { selected?.toolSettings ?? ToolSettings() }
@@ -61,12 +65,15 @@ final class ChatStore: ObservableObject {
          storageDirectory: URL? = nil, transport: ChatTransport? = nil,
          mcpConnections: MCPConnections? = nil, agentTransport: ChatAgentTransport? = nil,
          checkpointInterval: UInt64 = 2_000_000_000, lifecycle: GenerationLifecycle? = nil,
-         workingMemory: WorkingMemoryStore? = nil) {
+         workingMemory: WorkingMemoryStore? = nil, modelCatalogCache: ModelCatalogCache? = nil,
+         modelLoader: (@MainActor () async throws -> [ModelChoice])? = nil) {
         self.accountID = accountID; self.auth = auth; self.apiConnection = apiConnection; self.transport = transport
         self.mcpConnections = mcpConnections ?? MCPConnections(); self.agentTransport = agentTransport
         self.checkpointInterval = max(10_000_000, checkpointInterval)
         self.lifecycle = lifecycle ?? GenerationLifecycle()
         self.workingMemory = workingMemory ?? (storageDirectory == nil ? .shared : WorkingMemoryStore(memoryOnly: true))
+        self.modelCatalogCache = modelCatalogCache ?? (storageDirectory == nil ? .shared : ModelCatalogCache(defaults: nil))
+        self.modelLoader = modelLoader
         do {
             fileVault = try FileVault(accountID: accountID, root: storageDirectory?.appendingPathComponent("files"))
             var directory = try storageDirectory ?? FileManager.default.url(for: .applicationSupportDirectory,
@@ -95,39 +102,57 @@ final class ChatStore: ObservableObject {
         } catch { errorText = "无法读取本机聊天记录，已暂停写入以保留原文件。请解锁设备后重新打开 App。" }
     }
     func loadModels(refresh: Bool = false) async {
-        guard !isLoadingModels else { return }
+        guard !isLoadingModels, !isSending else { return }
         isLoadingModels = true
         defer { isLoadingModels = false }
+        var catalog = modelCatalogCache.models(for: accountID)
+        if models.isEmpty {
+            models = ModelCatalog.merged(manual: apiConnection?.modelIDs ?? [], remote: catalog)
+            if !models.isEmpty { restoreModelSelection() }
+        }
         if let connection = apiConnection {
-            var ids = connection.modelIDs
-            var catalog: [ModelChoice] = []
             if refresh {
                 do {
-                    let remote = try await APIChatClient.models(connection: connection)
-                    try Task.checkCancellation(); ids += remote.map(\.slug); errorText = nil
-                    catalog = remote
-                    for model in remote {
-                        if let efforts = model.reasoningEfforts {
-                            if apiConnection?.modelReasoningEfforts == nil { apiConnection?.modelReasoningEfforts = [:] }
-                            apiConnection?.modelReasoningEfforts?[model.slug] = efforts
-                        }
-                    }
+                    let remote: [ModelChoice]
+                    if let loader = modelLoader { remote = try await loader() }
+                    else { remote = try await APIChatClient.models(connection: connection) }
+                    try Task.checkCancellation(); catalog = remote
+                    modelCatalogCache.save(remote, for: accountID); modelCatalogNotice = nil
                 } catch is CancellationError { return }
-                catch { errorText = "未能获取模型列表，仍可使用手动配置的模型。\n" + error.localizedDescription }
+                catch { modelCatalogNotice = "暂时无法刷新，仍可使用已保存的模型。" }
             }
-            var seen = Set<String>()
-            models = ids.filter { seen.insert($0).inserted }.map { id in
-                catalog.first { $0.slug == id } ?? ModelChoice(slug: id, display_name: id, visibility: nil)
+            for model in catalog {
+                if let efforts = model.reasoningEfforts {
+                    if apiConnection?.modelReasoningEfforts == nil { apiConnection?.modelReasoningEfforts = [:] }
+                    apiConnection?.modelReasoningEfforts?[model.slug] = efforts
+                }
             }
+            models = ModelCatalog.merged(manual: connection.modelIDs, remote: catalog)
         } else {
             do {
-                let token = try await auth.accessToken(for: accountID)
-                let available = try await ResponsesClient.models(token: token)
-                try Task.checkCancellation(); models = available
-                if models.isEmpty { errorText = "当前账户没有返回可展示的模型。请检查工作空间与套餐授权。" }
+                let available: [ModelChoice]
+                if let loader = modelLoader { available = try await loader() }
+                else {
+                    let token = try await auth.accessToken(for: accountID)
+                    available = try await ResponsesClient.models(token: token)
+                }
+                try Task.checkCancellation(); models = ModelCatalog.merged(manual: [], remote: available)
+                modelCatalogCache.save(models, for: accountID); modelCatalogNotice = nil
+                if models.isEmpty { modelCatalogNotice = "当前账户没有返回可展示的模型。请检查工作空间与套餐授权。" }
             } catch is CancellationError { return }
-            catch { errorText = error.localizedDescription; return }
+            catch {
+                if models.isEmpty { modelCatalogNotice = error.localizedDescription }
+                else { modelCatalogNotice = "暂时无法刷新，已保留上次可用的模型列表。" }
+                return
+            }
         }
+        // A model chosen while the refresh was in flight must not change mid-reply.
+        if isSending, !models.contains(where: { $0.slug == selectedModel }), !selectedModel.isEmpty {
+            models.insert(ModelChoice(slug: selectedModel, display_name: selectedModel, visibility: nil), at: 0)
+        }
+        restoreModelSelection()
+    }
+    private func restoreModelSelection() {
         if !models.contains(where: { $0.slug == selectedModel }) {
             selectedModel = models.first(where: { $0.slug == selected?.model })?.slug ?? models.first?.slug ?? ""
         }

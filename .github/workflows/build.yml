@@ -18,7 +18,8 @@ jobs:
       - name: Check portable math parser and MCP approval policy (no simulator)
         run: |
           swiftc Core/MCPApprovalPolicy.swift Core/MessageMath.swift Core/WorkingMemoryContent.swift \
-            Core/APIConnection.swift Core/ReasoningEffort.swift Scripts/check_portable_core.swift \
+            Core/APIConnection.swift Core/ReasoningEffort.swift Core/ModelCatalog.swift Core/ConversationUX.swift \
+            Scripts/check_portable_core.swift \
             -o "$RUNNER_TEMP/check-portable-core"
           "$RUNNER_TEMP/check-portable-core"
       - name: Generate project

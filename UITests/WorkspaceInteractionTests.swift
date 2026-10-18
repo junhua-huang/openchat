@@ -199,6 +199,10 @@ final class WorkspaceInteractionTests: XCTestCase {
         let app = launch(extra: ["--ui-mcp"], workspace: false)
         let search = app.searchFields.firstMatch
         XCTAssertTrue(search.waitForExistence(timeout: 15)); search.tap(); search.typeText("docs")
+        // A broad term also matches several built-in vendors. Exercise the
+        // source filter instead of assuming a lazily loaded lower row exists.
+        let sources = app.segmentedControls["mcp.discovery-source"]
+        XCTAssertTrue(sources.waitForExistence(timeout: 5)); sources.buttons["社区目录"].tap()
         XCTAssertTrue(app.staticTexts["测试文档服务"].waitForExistence(timeout: 8))
         app.staticTexts["测试文档服务"].tap()
         XCTAssertTrue(app.navigationBars["服务详情"].waitForExistence(timeout: 5))

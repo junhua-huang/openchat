@@ -6,6 +6,7 @@ struct MCPDiscoveryView: View {
     @State private var query = ""
     @State private var pageTask: Task<Void, Never>?
     @State private var connectableOnly = false
+    @State private var communityOnly = false
     init(connections: MCPConnections, client: MCPRegistryClient = MCPRegistryClient()) {
         self.connections = connections; _discovery = StateObject(wrappedValue: MCPDiscoveryStore(client: client))
     }
@@ -14,6 +15,12 @@ struct MCPDiscoveryView: View {
             Section {
                 Toggle("仅显示可直接添加的服务", isOn: $connectableOnly).tint(Palette.switchTint)
                     .accessibilityIdentifier("mcp.discovery-connectable")
+                if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Picker("结果来源", selection: $communityOnly) {
+                        Text("全部").tag(false)
+                        Text("社区目录").tag(true)
+                    }.pickerStyle(.segmented).accessibilityIdentifier("mcp.discovery-source")
+                }
             }
             if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Section {
@@ -28,7 +35,7 @@ struct MCPDiscoveryView: View {
                     }
                 }
             } else {
-                if !discovery.vendorEntries.isEmpty {
+                if !communityOnly && !discovery.vendorEntries.isEmpty {
                     Section("厂商服务") {
                         ForEach(discovery.vendorEntries.filter { !connectableOnly || $0.canConnect }) { listing in row(listing) }
                     }
@@ -36,7 +43,7 @@ struct MCPDiscoveryView: View {
                 Section {
                     ForEach(discovery.entries.filter { !connectableOnly || $0.canConnect }) { listing in row(listing) }
                     if discovery.loading { HStack { ProgressView(); Text("正在搜索 MCP…").foregroundStyle(.secondary) } }
-                    if !discovery.loading, (discovery.vendorEntries + discovery.entries).filter({ !connectableOnly || $0.canConnect }).isEmpty, discovery.problem == nil {
+                    if !discovery.loading, ((communityOnly ? [] : discovery.vendorEntries) + discovery.entries).filter({ !connectableOnly || $0.canConnect }).isEmpty, discovery.problem == nil {
                         ContentUnavailableView("没有找到匹配服务", systemImage: "magnifyingglass", description: Text(connectableOnly ? "可关闭筛选，查看需要额外配置的厂商服务。" : "试试厂商英文名、产品名或用途；也可以手动添加服务。"))
                     }
                     if discovery.nextCursor != nil {

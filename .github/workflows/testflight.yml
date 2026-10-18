@@ -1,5 +1,7 @@
 name: Build for TestFlight
 on:
+  push:
+    branches: [release/testflight-20261019]
   workflow_dispatch:
     inputs:
       upload:
@@ -48,7 +50,7 @@ jobs:
           path: build/export/*.ipa
           retention-days: 7
       - name: Upload to App Store Connect
-        if: ${{ inputs.upload }}
+        if: ${{ inputs.upload || (github.event_name == 'push' && github.ref == 'refs/heads/release/testflight-20261019') }}
         run: bash Scripts/upload-testflight.sh
       - name: Remove signing material
         if: always()

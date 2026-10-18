@@ -20,11 +20,13 @@ final class ChatStore: ObservableObject {
     @Published private(set) var waitingThreadIDs: Set<UUID> = []
     let mcpConnections: MCPConnections
     let lifecycle: GenerationLifecycle
+    let workingMemory: WorkingMemoryStore
     private(set) var fileVault: FileVault?
     private var approvalContinuations: [UUID: CheckedContinuation<Bool, Error>] = [:]
     private let accountID: UUID
     private let auth: AuthManager
-    let apiConnection: APIConnection?
+    private(set) var apiConnection: APIConnection?
+    var connectionID: UUID { accountID }
     private let transport: ChatTransport?
     private let agentTransport: ChatAgentTransport?
     private var fileURL: URL?
@@ -58,11 +60,13 @@ final class ChatStore: ObservableObject {
     init(accountID: UUID, auth: AuthManager, apiConnection: APIConnection? = nil,
          storageDirectory: URL? = nil, transport: ChatTransport? = nil,
          mcpConnections: MCPConnections? = nil, agentTransport: ChatAgentTransport? = nil,
-         checkpointInterval: UInt64 = 2_000_000_000, lifecycle: GenerationLifecycle? = nil) {
+         checkpointInterval: UInt64 = 2_000_000_000, lifecycle: GenerationLifecycle? = nil,
+         workingMemory: WorkingMemoryStore? = nil) {
         self.accountID = accountID; self.auth = auth; self.apiConnection = apiConnection; self.transport = transport
         self.mcpConnections = mcpConnections ?? MCPConnections(); self.agentTransport = agentTransport
         self.checkpointInterval = max(10_000_000, checkpointInterval)
         self.lifecycle = lifecycle ?? GenerationLifecycle()
+        self.workingMemory = workingMemory ?? (storageDirectory == nil ? .shared : WorkingMemoryStore(memoryOnly: true))
         do {
             fileVault = try FileVault(accountID: accountID, root: storageDirectory?.appendingPathComponent("files"))
             var directory = try storageDirectory ?? FileManager.default.url(for: .applicationSupportDirectory,
@@ -96,15 +100,25 @@ final class ChatStore: ObservableObject {
         defer { isLoadingModels = false }
         if let connection = apiConnection {
             var ids = connection.modelIDs
+            var catalog: [ModelChoice] = []
             if refresh {
                 do {
                     let remote = try await APIChatClient.models(connection: connection)
                     try Task.checkCancellation(); ids += remote.map(\.slug); errorText = nil
+                    catalog = remote
+                    for model in remote {
+                        if let efforts = model.reasoningEfforts {
+                            if apiConnection?.modelReasoningEfforts == nil { apiConnection?.modelReasoningEfforts = [:] }
+                            apiConnection?.modelReasoningEfforts?[model.slug] = efforts
+                        }
+                    }
                 } catch is CancellationError { return }
                 catch { errorText = "未能获取模型列表，仍可使用手动配置的模型。\n" + error.localizedDescription }
             }
             var seen = Set<String>()
-            models = ids.filter { seen.insert($0).inserted }.map { ModelChoice(slug: $0, display_name: $0, visibility: nil) }
+            models = ids.filter { seen.insert($0).inserted }.map { id in
+                catalog.first { $0.slug == id } ?? ModelChoice(slug: id, display_name: id, visibility: nil)
+            }
         } else {
             do {
                 let token = try await auth.accessToken(for: accountID)
@@ -250,7 +264,7 @@ final class ChatStore: ObservableObject {
                         authorizeMCP: { [weak self] server in
                             guard let self = self else { throw CancellationError() }
                             return try await self.mcpConnections.authorized(server)
-                        })
+                        }, workingMemory: self.workingMemory)
                     if let agent = self.agentTransport { try await agent(runtime, onDelta) }
                     else {
                         try await ChatAgentClient.run(endpoint: AgentEndpoint(token: token, connection: self.apiConnection), model: model,

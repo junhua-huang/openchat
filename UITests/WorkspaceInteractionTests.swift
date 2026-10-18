@@ -1,6 +1,20 @@
 import XCTest
 
 final class WorkspaceInteractionTests: XCTestCase {
+    @MainActor func testMathDisplaysInLightAndDarkMode() {
+        for dark in [false, true] {
+            let app = launch(extra: ["--ui-math", "-AppleInterfaceStyle", dark ? "Dark" : "Light"])
+            let formulas = app.scrollViews.matching(identifier: "chat.math.display")
+            XCTAssertTrue(formulas.firstMatch.waitForExistence(timeout: 10))
+            XCTAssertGreaterThanOrEqual(formulas.count, 2)
+            XCTAssertGreaterThan(formulas.firstMatch.frame.height, 20)
+            let screenshot = XCTAttachment(screenshot: app.screenshot())
+            screenshot.name = dark ? "math-dark" : "math-light"
+            screenshot.lifetime = .keepAlways
+            add(screenshot)
+            app.terminate()
+        }
+    }
     override func setUpWithError() throws { continueAfterFailure = false }
 
     @MainActor private func launch(extra: [String] = [], workspace: Bool = true) -> XCUIApplication {

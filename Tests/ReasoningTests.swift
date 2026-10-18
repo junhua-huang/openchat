@@ -2,6 +2,22 @@ import XCTest
 @testable import LiaoChat
 
 final class ReasoningTests: XCTestCase {
+    func testCatalogCapabilitiesAndPerModelOverride() throws {
+        let data = Data(#"{"data":[{"id":"alias","name":"Gateway model","reasoning":{"supported_efforts":["low","high"]}}]}"#.utf8)
+        let models = try APIChatClient.decodeModels(data)
+        XCTAssertEqual(models.first?.reasoningEfforts, ["low", "high"])
+        var api = connection("https://example.com/v1")
+        api.modelReasoningEfforts = ["alias": models[0].reasoningEfforts!]
+        XCTAssertEqual(ReasoningSupport.options(model: "alias", connection: api), [.low, .high])
+        api.reasoningFormat = "object"
+        let request = try body(APIChatClient.chatRequest(connection: api, model: "alias", history: [], effort: .high))
+        XCTAssertEqual(request["reasoning"] as? [String: String], ["effort": "high"])
+        XCTAssertNil(request["reasoning_effort"])
+        api.reasoningOverrides = ["alias": []]
+        XCTAssertTrue(ReasoningSupport.options(model: "alias", connection: api).isEmpty)
+        XCTAssertThrowsError(try APIChatClient.chatRequest(connection: api, model: "alias", history: [], effort: .high))
+    }
+
     private func connection(_ base: String = "https://api.openai.com/v1") -> APIConnection {
         APIConnection(name: "Synthetic", baseURL: base, apiKey: "synthetic-key", modelIDs: ["gpt-6.1-sol"])
     }

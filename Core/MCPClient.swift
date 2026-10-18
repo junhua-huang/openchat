@@ -11,6 +11,7 @@ struct MCPTool: Codable, Identifiable, Equatable {
     var name: String
     var description: String?
     var inputSchema: JSONValue
+    var annotations: MCPToolAnnotations? = nil
     var id: String { name }
 }
 
@@ -24,6 +25,9 @@ struct MCPServer: Codable, Identifiable, Equatable {
     var oauth: MCPOAuthCredentials? = nil
     var oauthClientID: String? = nil
     var usesOAuth: Bool? = nil
+    // Optional for existing Keychain records, whose approval behavior is preserved.
+    var approvalPolicy: MCPApprovalPolicy? = nil
+    var effectiveApprovalPolicy: MCPApprovalPolicy { approvalPolicy ?? .always }
     static let gitHubTokenRequired = "GitHub MCP 需要访问令牌。请创建 GitHub Personal Access Token，填入 Token 栏后重试。"
     static func isGitHubEndpoint(_ text: String) -> Bool {
         guard let url = URL(string: text.trimmingCharacters(in: .whitespacesAndNewlines)),
@@ -67,7 +71,11 @@ struct MCPServer: Codable, Identifiable, Equatable {
         } catch { ready = false; problem = error.localizedDescription }
     }
     func save(_ server: MCPServer) throws {
-        let value = try server.validated(); var next = servers
+        var value = try server.validated(); var next = servers
+        if let previous = servers.first(where: { $0.id == value.id }), previous.endpoint != value.endpoint {
+            // A trust choice for one endpoint must not authorize a different service.
+            value.approvalPolicy = .always
+        }
         if let i = next.firstIndex(where: { $0.id == value.id }) { next[i] = value } else { next.append(value) }
         try persist(next)
     }

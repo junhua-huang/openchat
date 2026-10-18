@@ -1,9 +1,10 @@
 import Foundation
 
-struct ModelChoice: Decodable, Identifiable {
+struct ModelChoice: Codable, Identifiable {
     let slug: String
     let display_name: String
     let visibility: String?
+    var reasoningEfforts: [String]? = nil
     var id: String { slug }
 }
 

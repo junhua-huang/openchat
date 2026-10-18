@@ -31,6 +31,75 @@ private final class MCPMockProtocol: URLProtocol {
 }
 
 final class MCPTests: XCTestCase {
+    func testLegacyMCPConfigurationAndAnnotationRoundTrip() throws {
+        let json = #"{"name":"Legacy","endpoint":"https://example.com/mcp","id":"00000000-0000-0000-0000-000000000001","token":"","enabled":true,"tools":[{"name":"search","inputSchema":{"type":"object"}}]}"#
+        var server = try JSONDecoder().decode(MCPServer.self, from: Data(json.utf8))
+        XCTAssertEqual(server.effectiveApprovalPolicy, .always)
+        XCTAssertNil(server.tools.first?.annotations)
+        server.approvalPolicy = .readOnly
+        server.tools[0].annotations = MCPToolAnnotations(readOnlyHint: true)
+        let restored = try JSONDecoder().decode(MCPServer.self, from: JSONEncoder().encode(server))
+        XCTAssertEqual(restored, server)
+        XCTAssertFalse(restored.effectiveApprovalPolicy.requiresConfirmation(for: restored.tools.first?.annotations))
+    }
+
+    @MainActor func testChangingEndpointResetsSavedTrust() throws {
+        var server = MCPServer(name: "Trusted", endpoint: "https://example.com/mcp")
+        server.approvalPolicy = .never
+        let connections = MCPConnections(memoryOnly: true, servers: [server])
+        server.name = "Renamed"
+        try connections.save(server)
+        XCTAssertEqual(connections.servers.first?.effectiveApprovalPolicy, .never)
+        server.endpoint = "https://other.example.com/mcp"
+        try connections.save(server)
+        XCTAssertEqual(connections.servers.first?.effectiveApprovalPolicy, .always)
+    }
+
+    @MainActor func testApprovalPolicyControlsRepeatedRemoteCalls() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [MCPMockProtocol.self]
+        let session = URLSession(configuration: config)
+        defer { try? FileManager.default.removeItem(at: root); session.invalidateAndCancel(); MCPMockProtocol.handler = nil }
+        let cases: [(MCPApprovalPolicy?, MCPToolAnnotations?, Bool)] = [
+            (nil, MCPToolAnnotations(readOnlyHint: true), true),
+            (.always, MCPToolAnnotations(readOnlyHint: true), true),
+            (.readOnly, nil, true),
+            (.readOnly, MCPToolAnnotations(readOnlyHint: false, destructiveHint: false), true),
+            (.readOnly, MCPToolAnnotations(readOnlyHint: true, destructiveHint: true), true),
+            (.readOnly, MCPToolAnnotations(readOnlyHint: true), false),
+            (.never, nil, false)
+        ]
+        for (policy, annotations, shouldAsk) in cases {
+            var calls = 0; var approvals = 0
+            MCPMockProtocol.handler = { request in
+                let body = try JSONSerialization.jsonObject(with: MCPMockProtocol.body(request)) as! [String: Any]
+                let method = body["method"] as? String
+                if method == "notifications/initialized" { return (202, [:], Data()) }
+                let result: [String: Any]
+                if method == "initialize" {
+                    result = ["protocolVersion": "2025-06-18", "capabilities": [:], "serverInfo": ["name": "Synthetic", "version": "1"]]
+                } else {
+                    XCTAssertEqual(method, "tools/call"); calls += 1
+                    result = ["content": [["type": "text", "text": "synthetic-ok"]]]
+                }
+                let data = try JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "id": body["id"]!, "result": result])
+                return (200, ["Content-Type": "application/json"], data)
+            }
+            var server = MCPServer(name: "Synthetic", endpoint: "https://synthetic.invalid/mcp", enabled: true,
+                tools: [MCPTool(name: "search", inputSchema: .object(["type": .string("object")]), annotations: annotations)])
+            server.approvalPolicy = policy
+            let runtime = ToolRuntime(vault: try FileVault(accountID: UUID(), root: root), files: [], servers: [server],
+                approve: { _, _ in approvals += 1; return false }, event: { _ in }, mcpSession: session)
+            let tool = try XCTUnwrap(runtime.definitions().first { $0.name.hasPrefix("mcp_") })
+            for index in 0..<2 {
+                let result = try await runtime.execute(ToolCall(id: "test-\(index)", name: tool.name, arguments: "{}"))
+                XCTAssertTrue(result.contains(shouldAsk ? "用户拒绝" : "synthetic-ok"))
+            }
+            XCTAssertEqual(approvals, shouldAsk ? 2 : 0)
+            XCTAssertEqual(calls, shouldAsk ? 0 : 2)
+        }
+    }
+
     @MainActor func testGitHubMissingTokenStopsBeforeAnyNetworkRequest() async throws {
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [MCPMockProtocol.self]
         let session = URLSession(configuration: config); var requests = 0

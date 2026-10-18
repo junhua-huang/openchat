@@ -4,6 +4,7 @@ enum TableAlignment: Equatable { case leading, center, trailing }
 enum MessageBlock: Equatable {
     case prose(String)
     case code(language: String, text: String)
+    case math(MathExpression)
     case heading(level: Int, text: String)
     case listItem(depth: Int, marker: String, text: String, checked: Bool?)
     case quote(String)
@@ -40,6 +41,22 @@ enum MessageContent {
     }
 
     private static func proseBlocks(_ lines: [String]) -> [MessageBlock] {
+        var result: [MessageBlock] = []
+        var pending = ""
+        for part in MessageMath.parts(lines.joined(separator: "\n")) {
+            switch part {
+            case .text(let value): pending += value
+            case .math(let expression):
+                if expression.display {
+                    result += markdownBlocks(pending.components(separatedBy: "\n")); pending = ""
+                    result.append(.math(expression))
+                } else { pending += expression.source }
+            }
+        }
+        return result + markdownBlocks(pending.components(separatedBy: "\n"))
+    }
+
+    private static func markdownBlocks(_ lines: [String]) -> [MessageBlock] {
         var result: [MessageBlock] = []
         var paragraph: [String] = []
         func emitParagraph() {
@@ -120,11 +137,27 @@ enum MessageContent {
     }
     static func tableCells(_ line: String) -> [String] {
         let trim = line.trimmingCharacters(in: .whitespaces); let chars = Array(trim)
+        var math: [Int: String] = [:]
+        var offset = 0
+        for part in MessageMath.parts(trim) {
+            switch part {
+            case .text(let value): offset += value.count
+            case .math(let expression): math[offset] = expression.source; offset += expression.source.count
+            }
+        }
         var cells: [String] = []; var cell = ""; var escaped = false; var codeTicks = 0; var i = 0
         while i < chars.count {
+            if let source = math[i] { cell += source; i += source.count; continue }
             let char = chars[i]
             if escaped { cell.append(char); escaped = false; i += 1; continue }
-            if char == "\\" { escaped = true; i += 1; continue }
+            // Only an escaped pipe loses its backslash here. LaTeX commands,
+            // row separators and Markdown escapes must survive cell splitting.
+            if char == "\\", i + 1 < chars.count, chars[i + 1] == "|" {
+                escaped = true; i += 1; continue
+            }
+            if char == "\\", i + 1 < chars.count {
+                cell.append(char); cell.append(chars[i + 1]); i += 2; continue
+            }
             if char == "\u{0060}" {
                 var count = 1
                 while i + count < chars.count, chars[i + count] == char { count += 1 }

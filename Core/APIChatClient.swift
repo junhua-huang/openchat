@@ -38,13 +38,21 @@ enum APIChatClient {
 
     static func decodeModels(_ data: Data) throws -> [ModelChoice] {
         struct Catalog: Decodable {
-            struct Item: Decodable { let id: String }
+            struct Item: Decodable {
+                let id: String
+                let name: String?
+                let supported_reasoning_efforts: [String]?
+                let supported_efforts: [String]?
+                struct Reasoning: Decodable { let supported_efforts: [String]? }
+                let reasoning: Reasoning?
+            }
             let data: [Item]
         }
         let catalog = try JSONDecoder().decode(Catalog.self, from: data)
         var seen = Set<String>()
         return catalog.data.filter { !$0.id.isEmpty && seen.insert($0.id).inserted }
-            .map { ModelChoice(slug: $0.id, display_name: $0.id, visibility: nil) }
+            .map { ModelChoice(slug: $0.id, display_name: $0.name ?? $0.id, visibility: nil,
+                reasoningEfforts: $0.supported_reasoning_efforts ?? $0.supported_efforts ?? $0.reasoning?.supported_efforts) }
             .sorted { $0.slug < $1.slug }
     }
 
@@ -58,7 +66,7 @@ enum APIChatClient {
             "model": model, "stream": true,
             "messages": history.filter { $0.status == .complete }.map { ["role": $0.role.rawValue, "content": $0.text] }
         ]
-        if effort != .automatic { body["reasoning_effort"] = effort.rawValue }
+        ReasoningSupport.apply(effort, to: &body, responses: false, connection: connection)
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         return request
     }

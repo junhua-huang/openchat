@@ -43,7 +43,7 @@ struct MCPRegistryClient {
         url.queryItems = [URLQueryItem(name: "version", value: "latest"), URLQueryItem(name: "limit", value: "30")]
         if !term.isEmpty { url.queryItems?.append(URLQueryItem(name: "search", value: term)) }
         if let cursor = cursor, !cursor.isEmpty { url.queryItems?.append(URLQueryItem(name: "cursor", value: cursor)) }
-        var request = URLRequest(url: url.url!); request.timeoutInterval = 25
+        var request = URLRequest(url: url.url!); request.timeoutInterval = 35
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         // No model key, MCP token, attachment or chat history is sent here.
         let data: Data; let response: HTTPURLResponse

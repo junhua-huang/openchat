@@ -11,7 +11,7 @@ struct WorkspacePreview: View {
         } else if ProcessInfo.processInfo.arguments.contains("--ui-mcp") {
             NavigationStack {
                 MCPDiscoveryView(connections: store.mcpConnections, client: MCPRegistryClient(transport: { request in
-                    let data = Data(#"{"servers":[{"server":{"name":"io.synthetic/docs","title":"测试文档服务","description":"仅用于离线界面验证","remotes":[{"type":"streamable-http","url":"https://synthetic.invalid/mcp"}]}}]}"#.utf8)
+                    let data = Data(#"{"servers":[{"server":{"name":"io.synthetic/docs","title":"测试文档服务","description":"仅用于离线界面验证","remotes":[{"type":"streamable-http","url":"https://catalog.synthetic.invalid/mcp"}]}}]}"#.utf8)
                     return (data, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: [:])!)
                 }))
             }

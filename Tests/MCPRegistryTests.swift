@@ -85,6 +85,7 @@ final class MCPRegistryTests: XCTestCase {
         })
         let store = MCPDiscoveryStore(client: client)
         await store.search("test", debounce: false); await store.more(); await store.more()
+        await store.search("test")
         XCTAssertEqual(store.entries.map(\.title), ["one", "two"]); XCTAssertEqual(count, 2); XCTAssertNil(store.nextCursor)
     }
     func testRecommendationsHaveValidatedEndpointsAndNoEmbeddedSecrets() throws {

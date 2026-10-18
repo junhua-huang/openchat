@@ -19,22 +19,31 @@ wire = (root / "Core/ResponsesClient.swift").read_text()
 wire = wire[wire.index("struct SSEParser"):]
 main = '''
 @main enum MCPProbe {
-    @MainActor static func main() async throws {
-        let page = try await MCPRegistryClient().search("io.github.upstash/context7")
-        guard page.entries.contains(where: { $0.endpoint == "https://mcp.context7.com/mcp" }) else {
-            throw AppFailure.message("Registry did not return the expected remote server.")
-        }
-        print("Live MCP Registry passed: compatible results=\\(page.entries.filter(\\.canConnect).count)")
+    @MainActor static func main() async {
+        var failed = false
+        do {
+            let page = try await MCPRegistryClient().search("context7")
+            guard page.entries.contains(where: { $0.endpoint == "https://mcp.context7.com/mcp" }) else {
+                throw AppFailure.message("Registry did not return the expected remote server.")
+            }
+            print("Live MCP Registry passed: compatible results=\\(page.entries.filter(\\.canConnect).count)")
+        } catch { failed = true; print("Live MCP Registry unavailable: " + error.localizedDescription) }
         for listing in MCPRegistryClient.recommendations.prefix(2) {
-            guard let server = listing.server else { throw AppFailure.message("Invalid recommendation") }
-            let client = MCPClient(server: server)
+            guard let server = listing.server else { failed = true; continue }
+            let config = URLSessionConfiguration.ephemeral
+            config.httpCookieStorage = nil; config.urlCache = nil; config.urlCredentialStorage = nil
+            config.timeoutIntervalForRequest = 20; config.timeoutIntervalForResource = 35
+            let session = URLSession(configuration: config, delegate: NoRedirects(), delegateQueue: nil)
+            let client = MCPClient(server: server, session: session)
             do {
                 let tools = try await client.listTools()
                 await client.disconnect()
                 guard !tools.isEmpty else { throw AppFailure.message("Empty remote tool catalog") }
                 print("Live MCP catalog passed: \\(listing.title), tools=\\(tools.count)")
-            } catch { await client.disconnect(); throw error }
+            } catch { failed = true; await client.disconnect(); print("Live MCP catalog unavailable: " + listing.title + ": " + error.localizedDescription) }
+            session.invalidateAndCancel()
         }
+        if failed { exit(1) }
     }
 }
 '''

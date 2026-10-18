@@ -12,6 +12,9 @@ import Combine
     private var cursors = Set<String>()
     init(client: MCPRegistryClient = MCPRegistryClient()) { self.client = client }
     func search(_ query: String, debounce: Bool = true) async {
+        // Returning from a detail page restarts SwiftUI's task. Retain loaded
+        // pages instead of discarding them and repeating a slow public request.
+        if debounce, query == term, !entries.isEmpty { return }
         term = query; entries = []; nextCursor = nil; cursors = []
         let id = UUID(); requestID = id; problem = nil
         guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { loading = false; return }

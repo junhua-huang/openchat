@@ -67,8 +67,12 @@ final class WorkspaceInteractionTests: XCTestCase {
         let app = launch(extra: ["--ui-tools", "-appearance", "dark"], workspace: false)
         let toggle = app.switches["允许模型使用工具"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 15)); XCTAssertEqual(toggle.value as? String, "1")
-        toggle.tap(); XCTAssertEqual(toggle.value as? String, "0")
-        toggle.tap(); XCTAssertEqual(toggle.value as? String, "1")
+        // SwiftUI exposes the whole labeled row as a Switch. Its center is the
+        // label; tap the native thumb at the trailing edge of the row instead.
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        let offCapture = XCTAttachment(screenshot: app.screenshot()); offCapture.name = "dark-switch-off"; offCapture.lifetime = .keepAlways; add(offCapture)
+        XCTAssertEqual(toggle.value as? String, "0")
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap(); XCTAssertEqual(toggle.value as? String, "1")
         XCTAssertFalse(app.staticTexts["OpenAI 云端工具"].exists)
         let capture = XCTAttachment(screenshot: app.screenshot()); capture.name = "dark-system-switches"; capture.lifetime = .keepAlways; add(capture)
         app.buttons["mcp.discover"].tap()
@@ -85,6 +89,7 @@ final class WorkspaceInteractionTests: XCTestCase {
         XCTAssertTrue(search.waitForExistence(timeout: 15)); search.tap(); search.typeText("docs")
         XCTAssertTrue(app.staticTexts["测试文档服务"].waitForExistence(timeout: 8))
         app.staticTexts["测试文档服务"].tap()
+        XCTAssertTrue(app.navigationBars["服务详情"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["添加连接"].waitForExistence(timeout: 5))
     }
 }

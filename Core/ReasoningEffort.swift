@@ -23,6 +23,9 @@ enum ReasoningSupport {
     // Verified against official model pages / deployment checklist, 2026-10-17.
     static func options(model: String, connection: APIConnection? = nil) -> [ReasoningEffort] {
         if let connection = connection {
+            if let raw = connection.reasoningOverrides?[model] ?? connection.modelReasoningEfforts?[model] {
+                return ReasoningEffort.allCases.filter { $0 != .automatic && raw.contains($0.rawValue) }
+            }
             guard let url = try? APIConnection.normalizedURL(connection.baseURL),
                   url.host?.lowercased() == "api.openai.com", url.port == nil || url.port == 443,
                   url.path == "/v1" else { return [] }
@@ -35,6 +38,15 @@ enum ReasoningSupport {
         case "gpt-5": return [.minimal, .low, .medium, .high]
         default: return []
         }
+    }
+
+    static func apply(_ effort: ReasoningEffort, to body: inout [String: Any], responses: Bool,
+                      connection: APIConnection?) {
+        guard effort != .automatic else { return }
+        let object = responses || connection?.reasoningFormat == "object" ||
+            (connection?.reasoningFormat == nil && connection?.host.lowercased() == "openrouter.ai")
+        if object { body["reasoning"] = ["effort": effort.rawValue] }
+        else { body["reasoning_effort"] = effort.rawValue }
     }
 
     static func validate(_ effort: ReasoningEffort, model: String, connection: APIConnection? = nil) throws {

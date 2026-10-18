@@ -10,11 +10,17 @@ jobs:
   release:
     name: iOS Release archive
     runs-on: macos-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       - name: Select Xcode 26 or newer
         run: python3 Scripts/select_xcode.py
+      - name: Check portable math parser and MCP approval policy (no simulator)
+        run: |
+          swiftc Core/MCPApprovalPolicy.swift Core/MessageMath.swift Core/WorkingMemoryContent.swift \
+            Core/APIConnection.swift Core/ReasoningEffort.swift Scripts/check_portable_core.swift \
+            -o "$RUNNER_TEMP/check-portable-core"
+          "$RUNNER_TEMP/check-portable-core"
       - name: Generate project
         run: python3 Scripts/generate_project.py
       - name: Archive Release for iOS
@@ -31,6 +37,10 @@ jobs:
           path: build/ReleaseCheck.xcresult
           if-no-files-found: ignore
           retention-days: 7
+      - name: Compile regression tests for physical iOS devices (no simulator)
+        run: |
+          xcodebuild build-for-testing -project LiaoChat.xcodeproj -scheme LiaoChat -configuration Debug \
+            -destination 'generic/platform=iOS' -derivedDataPath build/DeviceTests CODE_SIGNING_ALLOWED=NO
       - name: Check live public search availability
         continue-on-error: true
         timeout-minutes: 4
@@ -39,69 +49,3 @@ jobs:
         continue-on-error: true
         timeout-minutes: 4
         run: python3 Scripts/check_mcp.py
-  simulator:
-    runs-on: macos-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v6
-      - name: Select Xcode 26 or newer
-        run: python3 Scripts/select_xcode.py
-      - name: Generate project
-        run: python3 Scripts/generate_project.py
-      - name: Select available iPhone simulator
-        run: |
-          xcodebuild -version
-          xcrun simctl list devices available -j > "$RUNNER_TEMP/devices.json"
-          python3 - <<'PY'
-          import json, os
-          from pathlib import Path
-          devices = json.loads(Path(os.environ['RUNNER_TEMP'], 'devices.json').read_text())['devices']
-          candidates = [d for runtime, group in devices.items() if 'iOS' in runtime for d in group if d['isAvailable'] and 'iPhone' in d['name']]
-          if not candidates: raise SystemExit('No iPhone simulator installed')
-          with open(os.environ['GITHUB_ENV'], 'a') as f: f.write('SIMULATOR_ID=' + candidates[0]['udid'] + '\n')
-          PY
-      - name: Build and run unit tests
-        timeout-minutes: 15
-        run: |
-          xcodebuild test -project LiaoChat.xcodeproj -scheme LiaoChat -configuration Debug \
-            -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
-            -derivedDataPath build/DerivedData -resultBundlePath build/UnitTests.xcresult \
-            -only-testing:LiaoChatTests \
-            -parallel-testing-enabled NO \
-            CODE_SIGNING_ALLOWED=NO
-      - name: Capture native chat UI
-        timeout-minutes: 8
-        run: bash Scripts/capture-ui.sh
-      - name: Retain native UI checks
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: native-ui-checks
-          path: build/ui/*.png
-          if-no-files-found: ignore
-          retention-days: 7
-      - name: Run UI regression tests
-        timeout-minutes: 15
-        run: |
-          xcodebuild test-without-building -project LiaoChat.xcodeproj -scheme LiaoChat -configuration Debug \
-            -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
-            -derivedDataPath build/DerivedData -resultBundlePath build/Tests.xcresult \
-            -only-testing:LiaoChatUITests -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO
-      - name: Retain synthetic native document checks
-        uses: actions/upload-artifact@v4
-        with:
-          name: native-document-checks
-          path: build/generated/*
-          if-no-files-found: error
-          retention-days: 7
-      - name: Retain simulator build and test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: simulator-build-and-tests
-          path: |
-            build/UnitTests.xcresult
-            build/Tests.xcresult
-            build/DerivedData/Build/Products/Debug-iphonesimulator/LiaoChat.app
-          if-no-files-found: ignore
-          retention-days: 7

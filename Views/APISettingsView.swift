@@ -74,6 +74,9 @@ struct APIConnectionEditor: View {
     @State private var fetchTask: Task<Void, Never>?
     @State private var problem: String?
     @State private var confirmDelete = false
+    @State private var reasoningOverrides: [String: [String]]
+    @State private var discoveredEfforts: [String: [String]]
+    @State private var reasoningFormat: String
 
     init(connection: APIConnection? = nil) {
         existing = connection
@@ -82,11 +85,16 @@ struct APIConnectionEditor: View {
         _key = State(initialValue: connection?.apiKey ?? "")
         _modelText = State(initialValue: connection?.modelIDs.joined(separator: "\n") ?? "")
         _protocolStyle = State(initialValue: connection?.protocolStyle ?? "auto")
+        _reasoningOverrides = State(initialValue: connection?.reasoningOverrides ?? [:])
+        _discoveredEfforts = State(initialValue: connection?.modelReasoningEfforts ?? [:])
+        _reasoningFormat = State(initialValue: connection?.reasoningFormat ?? "auto")
     }
 
     private var draft: APIConnection {
         APIConnection(id: existing?.id ?? UUID(), name: name, baseURL: baseURL, apiKey: key,
-                      modelIDs: APIConnection.parseModels(modelText), protocolStyle: protocolStyle == "auto" ? nil : protocolStyle)
+                      modelIDs: APIConnection.parseModels(modelText), protocolStyle: protocolStyle == "auto" ? nil : protocolStyle,
+                      reasoningOverrides: reasoningOverrides, modelReasoningEfforts: discoveredEfforts,
+                      reasoningFormat: reasoningFormat == "auto" ? nil : reasoningFormat)
     }
 
     var body: some View {
@@ -146,6 +154,27 @@ struct APIConnectionEditor: View {
                 Text("获取列表只会调用 /models，不会发送聊天。部分服务不支持此接口，此时直接填写模型 ID 即可。请选支持文本聊天的模型。")
             }
             Section {
+                Picker("推理参数格式", selection: $reasoningFormat) {
+                    Text("自动").tag("auto")
+                    Text("reasoning_effort").tag("flat")
+                    Text("reasoning.effort").tag("object")
+                }
+                ForEach(APIConnection.parseModels(modelText), id: \.self) { id in
+                    NavigationLink {
+                        ModelReasoningEditor(model: id, options: Binding(
+                            get: { reasoningOverrides[id] }, set: { reasoningOverrides[id] = $0 }))
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(id).lineLimit(1)
+                            Text(reasoningOverrides[id].map { $0.isEmpty ? "不发送强度参数" : "自定义强度档位" } ?? "自动识别")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            } header: { Text("模型思考强度") } footer: {
+                Text("优先读取服务商返回的档位；标准 /models 通常只返回模型 ID。无法识别时，可按服务商文档设置该模型支持的档位。默认不发送额外参数。")
+            }.disabled(fetching)
+            Section {
                 Button("保存连接") { save() }
                     .disabled(fetching || !apiConnections.isReady || (try? draft.validated()) == nil)
             }
@@ -158,7 +187,9 @@ struct APIConnectionEditor: View {
             if existing == nil { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } } }
         }
         .onDisappear { fetchTask?.cancel() }
-        .onChange(of: baseURL) { _, _ in available = [] }
+        .onChange(of: baseURL) { _, _ in
+            available = []; discoveredEfforts = [:]; reasoningOverrides = [:]
+        }
         .onChange(of: key) { _, _ in available = [] }
         .alert("API 连接提示", isPresented: Binding(get: { problem != nil }, set: { if !$0 { problem = nil } })) {
             Button("知道了", role: .cancel) { problem = nil }
@@ -173,7 +204,7 @@ struct APIConnectionEditor: View {
 
     private func preset(_ label: String, _ url: String) {
         guard !fetching else { return }
-        if baseURL != url { key = ""; modelText = "" }
+        if baseURL != url { key = ""; modelText = ""; reasoningOverrides = [:]; discoveredEfforts = [:]; reasoningFormat = "auto" }
         name = label; baseURL = url; available = []
         protocolStyle = "auto"
     }
@@ -191,6 +222,9 @@ struct APIConnectionEditor: View {
                 let result = try await APIChatClient.models(connection: connection)
                 try Task.checkCancellation()
                 available = result
+                for model in result {
+                    if let efforts = model.reasoningEfforts { discoveredEfforts[model.slug] = efforts }
+                }
                 if result.isEmpty { problem = "服务商没有返回模型，请手动填写模型 ID。" }
             } catch is CancellationError { }
             catch { if !Task.isCancelled { problem = "获取失败，可手动填写模型 ID。\n" + error.localizedDescription } }

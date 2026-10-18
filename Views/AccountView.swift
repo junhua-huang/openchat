@@ -18,6 +18,9 @@ struct AccountView: View {
                 AmbientBackground()
                 Form {
                     Section("AI 服务") {
+                        NavigationLink { WorkingMemoryView(memory: store.workingMemory) } label: {
+                            Label("共享工作记忆", systemImage: "brain")
+                        }
                         Button { showingTools = true } label: { Label("工具与 MCP", systemImage: "wrench.and.screwdriver") }
                         NavigationLink { APISettingsView() } label: {
                             Label("API 连接与服务商", systemImage: "server.rack")

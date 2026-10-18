@@ -146,7 +146,13 @@ struct ChatWorkspaceView: View {
         .onChange(of: store.selectedApproval?.id) { _, id in
             if id == nil, case .approval = sheet { sheet = nil }
         }
-        .task { await store.loadModels() }
+        .task {
+            await store.loadModels()
+            if let requested = apiConnections.requestedModel, requested.connectionID == store.connectionID {
+                store.selectModel(requested.model)
+                apiConnections.requestedModel = nil
+            }
+        }
         .task(id: newConversationFocusID) {
             guard let request = newConversationFocusID else { return }
             // Let the new composer mount before asking it to become first responder.
@@ -194,9 +200,8 @@ struct ChatWorkspaceView: View {
                     HStack(spacing: 6) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(modelName).font(.subheadline.weight(.semibold)).lineLimit(1)
-                            if !store.effortOptions.isEmpty {
-                                Text("思考 · " + store.selectedEffort.title).font(.caption2).foregroundStyle(.secondary)
-                            }
+                            Text(store.connectionName + (store.effortOptions.isEmpty ? "" : " · " + store.selectedEffort.title))
+                                .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                         }
                         Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
                     }.padding(.horizontal, 12).frame(minHeight: 48)

@@ -10,6 +10,11 @@ struct APIConnection: Codable, Identifiable, Equatable {
     var apiKey: String
     var modelIDs: [String]
     var protocolStyle: String?
+    // Explicit overrides take precedence over optional provider catalog metadata.
+    // An empty override disables effort parameters for that model.
+    var reasoningOverrides: [String: [String]]? = nil
+    var modelReasoningEfforts: [String: [String]]? = nil
+    var reasoningFormat: String? = nil
     var usesResponses: Bool { protocolStyle.map { $0 == "responses" } ?? (host.lowercased() == "api.openai.com") }
     var isOfficialResponses: Bool {
         guard usesResponses, let url = try? Self.normalizedURL(baseURL) else { return false }
@@ -44,6 +49,7 @@ struct APIConnection: Codable, Identifiable, Equatable {
     func validated() throws -> APIConnection {
         var result = self
         guard protocolStyle == nil || ["chat", "responses"].contains(protocolStyle ?? "") else { throw AppFailure.message("API 协议设置无效。") }
+        guard reasoningFormat == nil || ["flat", "object"].contains(reasoningFormat ?? "") else { throw AppFailure.message("推理参数格式无效。") }
         result.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         result.apiKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         result.baseURL = try Self.normalizedURL(baseURL).absoluteString
@@ -65,6 +71,7 @@ private struct APIConnectionVault: Codable {
 
 @MainActor
 final class APIConnections: ObservableObject {
+    @Published var requestedModel: (connectionID: UUID, model: String)?
     @Published private(set) var connections: [APIConnection] = []
     @Published private(set) var activeID: UUID?
     @Published private(set) var isReady = false

@@ -34,14 +34,14 @@ struct ToolsSettingsView: View {
                         NavigationLink { MCPServerEditor(connections: connections, existing: server) } label: {
                             VStack(alignment: .leading, spacing: 5) {
                                 Text(server.name)
-                                Text("\(server.enabled ? "已启用" : "未启用") · \(server.tools.count) 个工具")
+                                Text("\(server.enabled ? "已启用" : "未启用") · \(server.tools.count) 个工具 · \(server.effectiveApprovalPolicy.title)")
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                         }
                     }
                     Button { adding = true } label: { Label("添加 MCP 服务器", systemImage: "plus.circle") }.disabled(!connections.ready)
                 } header: { Text("MCP 远程工具") } footer: {
-                    Text("添加服务后即可供各 AI 连接使用。需要登录时会打开授权页面；远程工具执行前仍会确认。")
+                    Text("添加服务后即可供各 AI 连接使用。需要登录时会打开授权页面；调用确认方式可在每个连接中单独设置。")
                 }
             }.scrollContentBackground(.hidden).background(Palette.paper)
                 .navigationTitle("工具与 MCP").navigationBarTitleDisplayMode(.inline)
@@ -60,6 +60,7 @@ struct MCPServerEditor: View {
     @State private var endpoint: String
     @State private var token: String
     @State private var enabled: Bool
+    @State private var approvalPolicy: MCPApprovalPolicy
     @State private var mode: MCPAuthorizationMode
     @State private var clientID: String
     @State private var oauth: MCPOAuthCredentials?
@@ -88,6 +89,7 @@ struct MCPServerEditor: View {
         _clientID = State(initialValue: source?.oauthClientID ?? source?.oauth?.clientID ?? "")
         _oauth = State(initialValue: source?.oauth)
         _token = State(initialValue: source?.token ?? ""); _enabled = State(initialValue: source?.enabled ?? true)
+        _approvalPolicy = State(initialValue: source?.effectiveApprovalPolicy ?? .always)
     }
     var body: some View {
         Form {
@@ -100,6 +102,21 @@ struct MCPServerEditor: View {
                 }
             }
             advancedSection
+            Section {
+                Picker("调用确认", selection: $approvalPolicy) {
+                    ForEach(MCPApprovalPolicy.allCases, id: \.self) { Text($0.title).tag($0) }
+                }.accessibilityIdentifier("mcp.approval-policy")
+                if let current = connections.servers.first(where: { $0.id == existing?.id }),
+                   current.effectiveApprovalPolicy != approvalPolicy {
+                    Button("保存调用确认设置") { saveApprovalPolicy() }.disabled(busy)
+                        .accessibilityIdentifier("mcp.save-approval-policy")
+                }
+            } footer: {
+                Text(approvalPolicy == .always ? "每次执行前查看工具和参数。" : approvalPolicy == .readOnly
+                     ? "信任此服务提供的只读标记并自动执行；未标记或标记为修改、破坏性操作的工具仍需确认。"
+                     : "允许 AI 自动调用此连接的所有工具，包括修改和删除操作。")
+                Text("设置从下一次回复开始生效。")
+            }.disabled(busy)
             if let existing = existing {
                 Section {
                     DisclosureGroup("已连接的工具（\(existing.tools.count)）") {
@@ -121,7 +138,10 @@ struct MCPServerEditor: View {
             .sheet(item: $signIn.browser, onDismiss: { signIn.cancel() }) { item in
                 SafariBrowser(url: item.url) { signIn.cancel() }.ignoresSafeArea()
             }
-            .onChange(of: endpoint) { _, _ in oauth = nil; needsToken = false; problem = nil; diagnostic = nil }
+            .onChange(of: endpoint) { _, _ in
+                oauth = nil; needsToken = false; problem = nil; diagnostic = nil
+                approvalPolicy = .always
+            }
             .onChange(of: clientID) { _, value in if oauth?.clientID != value { oauth = nil } }
             .onChange(of: token) { _, value in if !value.isEmpty { oauth = nil }; problem = nil }
             .onChange(of: mode) { _, _ in problem = nil; needsToken = false }
@@ -225,6 +245,7 @@ struct MCPServerEditor: View {
                 var server = MCPServer(id: existing?.id ?? UUID(), name: serviceName, endpoint: endpoint,
                     token: useToken ? token : "", enabled: enabled)
                 server.usesOAuth = mode == .oauth ? true : nil
+                server.approvalPolicy = approvalPolicy
                 server.oauthClientID = clientID.isEmpty ? nil : clientID
                 if !useToken, let saved = oauth, (saved.boundEndpoint ?? saved.resource) == MCPOAuthClient.canonical(try BoundedHTTP.endpoint(server.endpoint)) { server.oauth = saved }
                 if existing?.endpoint == server.endpoint && existing?.token == server.token && existing?.oauth == server.oauth { server.tools = existing?.tools ?? [] }
@@ -243,5 +264,16 @@ struct MCPServerEditor: View {
                 problem = oauth != nil ? "登录已失效，请重新登录。" : "访问令牌未被接受，请检查是否正确或已过期。"
             } catch { problem = error.localizedDescription }
         }
+    }
+    private func saveApprovalPolicy() {
+        // Save locally without a network handshake or another OAuth login.
+        guard let id = existing?.id, var server = connections.servers.first(where: { $0.id == id }) else { return }
+        do {
+            guard try BoundedHTTP.endpoint(endpoint).absoluteString == server.endpoint else {
+                throw AppFailure.message("服务器地址已改变，请先连接并保存新地址。")
+            }
+            server.approvalPolicy = approvalPolicy
+            try connections.save(server); problem = nil
+        } catch { problem = error.localizedDescription }
     }
 }

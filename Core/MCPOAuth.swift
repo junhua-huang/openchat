@@ -3,6 +3,7 @@ import Foundation
 /// Credentials belong to one MCP resource, never to the ChatGPT account.
 struct MCPOAuthCredentials: Codable, Equatable {
     var resource: String
+    var boundEndpoint: String? = nil
     var issuer: String
     var tokenEndpoint: String
     var clientID: String
@@ -13,6 +14,7 @@ struct MCPOAuthCredentials: Codable, Equatable {
 
 struct MCPOAuthDiscovery {
     var resource: String
+    var boundEndpoint: String? = nil
     var issuer: String
     var authorizationEndpoint: URL
     var tokenEndpoint: URL
@@ -37,6 +39,13 @@ struct MCPOAuthAttempt {
         c.scheme = c.scheme?.lowercased(); c.host = c.host?.lowercased()
         if c.path == "/" { c.path = "" }
         return c.string!
+    }
+    static func matchesResource(_ resource: URL, endpoint: URL) -> Bool {
+        let declared = canonical(resource), requested = canonical(endpoint)
+        // A metadata-declared identifier is authoritative for the OAuth audience;
+        // allow its common trailing-slash alias, while binding credentials to
+        // the exact configured endpoint separately.
+        return declared == requested || declared + "/" == requested || requested + "/" == declared
     }
     static func parameter(_ name: String, in header: String?) -> String? {
         guard let header = header, header.count < 16000,
@@ -85,7 +94,7 @@ struct MCPOAuthAttempt {
             catch { if Task.isCancelled { throw CancellationError() } }
         }
         guard let metadata = resourceMetadata, let resource = metadata["resource"] as? String,
-              Self.canonical(try BoundedHTTP.endpoint(resource)) == Self.canonical(resourceURL),
+              Self.matchesResource(try BoundedHTTP.endpoint(resource), endpoint: resourceURL),
               let issuers = metadata["authorization_servers"] as? [String], !issuers.isEmpty else {
             throw AppFailure.message("此端点没有提供有效的 MCP OAuth 资源元数据，请检查地址或改用 Token。")
         }
@@ -105,7 +114,7 @@ struct MCPOAuthAttempt {
         if let methods = authority["token_endpoint_auth_methods_supported"] as? [String], !methods.contains("none") {
             throw AppFailure.message("此服务要求保密客户端，不能把 Client Secret 内置到 iOS App。请使用可信后端完成授权，或使用 Token。")
         }
-        return MCPOAuthDiscovery(resource: Self.canonical(resourceURL), issuer: issuer,
+        return MCPOAuthDiscovery(resource: Self.canonical(try BoundedHTTP.endpoint(resource)), boundEndpoint: Self.canonical(resourceURL), issuer: issuer,
             authorizationEndpoint: try BoundedHTTP.endpoint(authorization), tokenEndpoint: try BoundedHTTP.endpoint(token),
             registrationEndpoint: try (authority["registration_endpoint"] as? String).map { try BoundedHTTP.endpoint($0) },
             scope: Self.parameter("scope", in: challenge) ?? (metadata["scopes_supported"] as? [String])?.joined(separator: " "))
@@ -160,11 +169,11 @@ struct MCPOAuthAttempt {
     func exchange(_ attempt: MCPOAuthAttempt, code: String) async throws -> MCPOAuthCredentials {
         try await token(attempt.discovery.tokenEndpoint, values: ["grant_type": "authorization_code", "client_id": attempt.clientID,
             "redirect_uri": attempt.redirect.absoluteString, "code": code, "code_verifier": attempt.verifier, "resource": attempt.discovery.resource],
-            previous: MCPOAuthCredentials(resource: attempt.discovery.resource, issuer: attempt.discovery.issuer, tokenEndpoint: attempt.discovery.tokenEndpoint.absoluteString, clientID: attempt.clientID, accessToken: ""))
+            previous: MCPOAuthCredentials(resource: attempt.discovery.resource, boundEndpoint: attempt.discovery.boundEndpoint, issuer: attempt.discovery.issuer, tokenEndpoint: attempt.discovery.tokenEndpoint.absoluteString, clientID: attempt.clientID, accessToken: ""))
     }
     func refreshed(_ server: MCPServer) async throws -> MCPServer {
         guard let saved = server.oauth else { return server }
-        guard saved.resource == Self.canonical(try BoundedHTTP.endpoint(server.endpoint)) else { throw AppFailure.message("MCP 地址已改变，请重新 OAuth 登录。") }
+        guard (saved.boundEndpoint ?? saved.resource) == Self.canonical(try BoundedHTTP.endpoint(server.endpoint)) else { throw AppFailure.message("MCP 地址已改变，请重新 OAuth 登录。") }
         guard let expiry = saved.expiresAt, expiry <= Date().addingTimeInterval(60) else { return server }
         guard let refresh = saved.refreshToken else { throw AppFailure.message("MCP 登录已过期，请在工具设置中重新登录。") }
         var result = server

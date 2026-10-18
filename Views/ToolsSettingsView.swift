@@ -159,7 +159,7 @@ struct MCPServerEditor: View {
                 var server = try MCPServer(id: existing?.id ?? UUID(), name: name, endpoint: endpoint, token: oauthEnabled ? "" : token, enabled: enabled).validated()
                 server.usesOAuth = oauthEnabled; server.oauthClientID = oauthEnabled ? clientID : nil
                 if oauthEnabled {
-                    if let saved = oauth, saved.resource == MCPOAuthClient.canonical(try BoundedHTTP.endpoint(server.endpoint)), saved.clientID == clientID { server.oauth = saved }
+                    if let saved = oauth, (saved.boundEndpoint ?? saved.resource) == MCPOAuthClient.canonical(try BoundedHTTP.endpoint(server.endpoint)), saved.clientID == clientID { server.oauth = saved }
                     else if enabled {
                         let credentials = try await signIn.login(endpoint: server.endpoint, clientID: clientID)
                         clientID = credentials.clientID; oauth = credentials; server.oauth = credentials; server.oauthClientID = credentials.clientID
@@ -172,7 +172,7 @@ struct MCPServerEditor: View {
                 }
                 else if existing?.endpoint == server.endpoint && existing?.token == server.token { server.tools = existing?.tools ?? [] }
                 try connections.save(server); dismiss()
-            } catch is CancellationError { }
+            } catch is CancellationError { if !Task.isCancelled { problem = "登录已取消或等待超时，可以重新登录。" } }
             catch { problem = error.localizedDescription }
         }
     }

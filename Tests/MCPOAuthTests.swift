@@ -83,6 +83,20 @@ private final class OAuthMockProtocol: URLProtocol {
         XCTAssertEqual(updated.oauth?.accessToken, "rotated-access"); XCTAssertEqual(updated.oauth?.refreshToken, "refresh-two")
         XCTAssertEqual(registration, 1); XCTAssertEqual(exchanges, 1); XCTAssertEqual(refreshes, 1)
     }
+    func testMetadataAudienceAllowsTrailingSlashAliasButKeepsExactEndpointBinding() async throws {
+        let session = session(); defer { session.invalidateAndCancel(); OAuthMockProtocol.handler = nil }
+        OAuthMockProtocol.handler = { request in
+            switch request.url!.path {
+            case "/mcp/": return (401, ["WWW-Authenticate": "Bearer resource_metadata=\"https://mcp.example.com/metadata\""], [:])
+            case "/metadata": return (200, [:], ["resource": self.resource, "authorization_servers": [self.issuer]])
+            default: return (200, [:], ["issuer": self.issuer, "authorization_endpoint": self.issuer + "/authorize", "token_endpoint": self.issuer + "/token", "code_challenge_methods_supported": ["S256"], "token_endpoint_auth_methods_supported": ["none"]])
+            }
+        }
+        let found = try await MCPOAuthClient(session: session).discover(endpoint: resource + "/")
+        XCTAssertEqual(found.resource, resource); XCTAssertEqual(found.boundEndpoint, resource + "/")
+        XCTAssertFalse(MCPOAuthClient.matchesResource(URL(string: resource)!, endpoint: URL(string: "https://other.example.com/mcp")!))
+        XCTAssertFalse(MCPOAuthClient.matchesResource(URL(string: resource)!, endpoint: URL(string: resource + "/private")!))
+    }
     func testPreRegisteredClientSkipsRegistrationAndRejectsInvalidCallbacks() async throws {
         let session = session(); defer { session.invalidateAndCancel(); OAuthMockProtocol.handler = nil }
         OAuthMockProtocol.handler = { _ in XCTFail("Pre-registration should not use the network"); return (500, [:], [:]) }

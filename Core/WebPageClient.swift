@@ -74,11 +74,17 @@ enum WebPageClient {
             .replacingOccurrences(of: "(?is)<(?:br|/p|/div|/h[1-6]|/li)\\b[^>]*>", with: "\n", options: .regularExpression)
             .replacingOccurrences(of: "(?s)<[^>]+>", with: " ", options: .regularExpression)
         if let regex = try? NSRegularExpression(pattern: "&#(x[0-9a-fA-F]+|[0-9]+);") {
-            for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).reversed() {
-                guard let range = Range(match.range, in: text), let valueRange = Range(match.range(at: 1), in: text) else { continue }
-                let raw = String(text[valueRange]); let value = raw.hasPrefix("x") ? UInt32(raw.dropFirst(), radix: 16) : UInt32(raw)
-                if let value = value, let scalar = UnicodeScalar(value) { text.replaceSubrange(range, with: String(scalar)) }
+            let source = text; var decoded = ""; decoded.reserveCapacity(source.utf8.count)
+            var cursor = source.startIndex
+            for match in regex.matches(in: source, range: NSRange(source.startIndex..., in: source)) {
+                guard let range = Range(match.range, in: source), let valueRange = Range(match.range(at: 1), in: source) else { continue }
+                decoded += source[cursor..<range.lowerBound]
+                let raw = String(source[valueRange]); let value = raw.hasPrefix("x") ? UInt32(raw.dropFirst(), radix: 16) : UInt32(raw)
+                if let value = value, let scalar = UnicodeScalar(value) { decoded.append(String(scalar)) }
+                else { decoded += source[range] }
+                cursor = range.upperBound
             }
+            decoded += source[cursor...]; text = decoded
         }
         for (entity, value) in [("&nbsp;", " "), ("&lt;", "<"), ("&gt;", ">"), ("&quot;", "\""), ("&#39;", "'"), ("&amp;", "&")] { text = text.replacingOccurrences(of: entity, with: value) }
         return text.replacingOccurrences(of: "[ \\t]{2,}", with: " ", options: .regularExpression)

@@ -143,7 +143,7 @@ struct MCPServer: Codable, Identifiable, Equatable {
         let detail: String
         switch status {
         case 401:
-            detail = github ? "GitHub 未接受此访问令牌。请检查 PAT 是否正确、过期或已撤销，再更新 Token。" : "此 MCP 服务需要授权，或当前 Token 已失效。请填写有效 Token；或在工具设置中重新 OAuth 登录。"
+            detail = github && server.oauth != nil ? "GitHub OAuth 访问令牌已失效或未被接受，请在工具设置中重新登录并检查应用授权。" : github ? "GitHub 未接受此访问令牌。请检查 PAT 是否正确、过期或已撤销，再更新 Token。" : "此 MCP 服务需要授权，或当前 Token 已失效。请填写有效 Token；或在工具设置中重新 OAuth 登录。"
         case 403:
             detail = github ? "GitHub 拒绝访问。请检查 PAT 的仓库访问权限，以及组织的 SSO 授权或访问策略。" : "此 MCP 服务拒绝访问，请检查 Token 权限和服务端访问策略。"
         case 404:

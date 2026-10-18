@@ -55,6 +55,37 @@ final class WorkspaceInteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "回复已在后台完成")).firstMatch.waitForExistence(timeout: 20))
         XCTAssertFalse(app.staticTexts["网络连接已中断。"].exists)
     }
+    @MainActor func testCompactComposerAndChatTapOrDragDismissKeyboard() {
+        let app = launch()
+        let composer = app.descendants(matching: .any).matching(identifier: "chat.composer").firstMatch
+        let add = app.buttons["chat.add"]
+        XCTAssertTrue(add.exists); XCTAssertLessThan(abs(add.frame.midY - composer.frame.midY), 20)
+        XCTAssertFalse(app.buttons["工具已启用，打开工具设置"].exists)
+        composer.tap(); XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        let chat = app.scrollViews["chat.conversation"]
+        chat.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.2)).tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+        composer.tap(); XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        chat.swipeDown()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+        openHistory(app)
+    }
+    @MainActor func testFirstSendAndRepeatedStreamingKeepLatestReplyInViewport() {
+        let app = launch(extra: ["--ui-empty", "--ui-scroll"])
+        let composer = app.descendants(matching: .any).matching(identifier: "chat.composer").firstMatch
+        for index in 0..<3 {
+            composer.tap(); composer.typeText("测试 \(index)\n输入框展开后发送")
+            app.buttons["发送消息"].tap()
+            let tail = app.staticTexts["滚动验收结束 \(index * 2 + 1)"]
+            XCTAssertTrue(tail.waitForExistence(timeout: 10))
+            // Wait for the coalesced post-layout scroll, then verify real geometry.
+            let visible = NSPredicate { _, _ in tail.isHittable && tail.frame.midY > app.buttons["chat.history"].frame.maxY && tail.frame.maxY < composer.frame.minY }
+            expectation(for: visible, evaluatedWith: nil); waitForExpectations(timeout: 5)
+            let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "stream-after-send-\(index)"; shot.lifetime = .keepAlways; add(shot)
+        }
+        app.scrollViews["chat.conversation"].swipeUp()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+    }
     @MainActor func testToolRecordsRemainAccessibleBelowAnswer() {
         let app = launch(extra: ["--ui-timeline"])
         app.scrollViews.firstMatch.swipeUp()

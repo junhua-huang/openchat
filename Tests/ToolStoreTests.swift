@@ -13,13 +13,16 @@ final class ToolStoreTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let connection = APIConnection(name: "Synthetic", baseURL: "https://example.com/v1", apiKey: "synthetic", modelIDs: ["m"])
         var finished = false
+        let server = MCPServer(name: "Synthetic MCP", endpoint: "https://synthetic.invalid/mcp", enabled: true,
+                               tools: [MCPTool(name: "test", inputSchema: .object(["type": .string("object")]))])
         let store = ChatStore(accountID: UUID(), auth: AuthManager(), apiConnection: connection, storageDirectory: directory,
-            mcpConnections: MCPConnections(memoryOnly: true), agentTransport: { runtime, _ in
-                _ = try await runtime.execute(ToolCall(id: "pending", name: "read_webpage", arguments: #"{"url":"https://synthetic.invalid/article"}"#))
+            mcpConnections: MCPConnections(memoryOnly: true, servers: [server]), agentTransport: { runtime, _ in
+                let tool = try XCTUnwrap(runtime.definitions().first { $0.name.hasPrefix("mcp_") })
+                _ = try await runtime.execute(ToolCall(id: "pending", name: tool.name, arguments: "{}"))
                 finished = true
             })
         defer { store.stopAll(); try? FileManager.default.removeItem(at: directory) }
-        await store.loadModels(); XCTAssertTrue(store.send("读取网页"))
+        await store.loadModels(); XCTAssertTrue(store.send("调用 MCP"))
         try await waitFor { store.selectedApproval != nil }
         let id = try XCTUnwrap(store.selectedApproval?.id)
         store.stop(); store.resolveApproval(id, allow: true)

@@ -63,6 +63,11 @@ private struct LiquidSurface: ViewModifier {
 }
 
 extension View {
+    @ViewBuilder func chatScrollEdgesHidden() -> some View {
+        if #available(iOS 26.0, *) { scrollEdgeEffectHidden(true, for: [.top, .bottom]) }
+        else { self }
+    }
+
     func liquidSurface(radius: CGFloat = 24, interactive: Bool = false) -> some View {
         modifier(LiquidSurface(radius: radius, interactive: interactive))
     }

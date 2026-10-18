@@ -81,11 +81,17 @@ struct WorkspacePreview: View {
                 .write(to: directory.appendingPathComponent(connection.id.uuidString + ".json"))
         } catch { assertionFailure("Unable to prepare synthetic UI fixture") }
         return ChatStore(accountID: connection.id, auth: auth, apiConnection: connection,
-                         storageDirectory: directory, transport: { _, _, _, delta in
+                         storageDirectory: directory, transport: { _, history, _, delta in
                              if ProcessInfo.processInfo.arguments.contains("--ui-background") {
                                  delta("开始生成…")
                                  try await Task.sleep(nanoseconds: 8_000_000_000)
                                  delta("回复已在后台完成")
+                             } else if ProcessInfo.processInfo.arguments.contains("--ui-scroll") {
+                                 for index in 1...12 {
+                                     delta("第 \(index) 段：这是一段用于验证流式滚动、键盘收起和输入框高度变化的本地文字。\n\n")
+                                     try await Task.sleep(nanoseconds: 90_000_000)
+                                 }
+                                 delta("滚动验收结束 \(history.count)")
                              } else { delta("这是本地界面预览。") }
                          },
                          mcpConnections: MCPConnections(memoryOnly: true, servers: [MCPServer(name: "示例 MCP", endpoint: "https://synthetic.invalid/mcp")]))

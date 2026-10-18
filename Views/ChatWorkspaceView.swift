@@ -24,7 +24,6 @@ private struct ChatBottomKey: PreferenceKey {
 struct ChatWorkspaceView: View {
     @EnvironmentObject private var auth: AuthManager
     @EnvironmentObject private var apiConnections: APIConnections
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .title2) private var titleSize: CGFloat = 28
@@ -34,6 +33,7 @@ struct ChatWorkspaceView: View {
     @State private var followOutput = true
     @State private var isNearBottom = true
     @State private var isDragging = false
+    @State private var scrollTask: Task<Void, Never>?
     @State private var importing = false
     @State private var showingPhotos = false
     @State private var photos: [PhotosPickerItem] = []
@@ -74,6 +74,7 @@ struct ChatWorkspaceView: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { composer }
+        .chatScrollEdgesHidden()
         .sheet(item: $sheet, onDismiss: {
             if let intent = pendingConnection {
                 pendingConnection = nil
@@ -139,7 +140,7 @@ struct ChatWorkspaceView: View {
             else if phase == .background { store.sceneChanged(active: false) }
             else { store.flushDrafts() }
         }
-        .onDisappear { store.stopAll() }
+        .onDisappear { scrollTask?.cancel(); scrollTask = nil; store.stopAll() }
     }
 
     private var header: some View {
@@ -179,9 +180,8 @@ struct ChatWorkspaceView: View {
         GeometryReader { viewport in
             ScrollViewReader { proxy in
                 ScrollView {
-                  VStack(spacing: 0) {
                     LazyVStack(alignment: .leading, spacing: 30) {
-                        if store.selected?.messages.isEmpty != false { emptyState }
+                        if store.selected?.messages.isEmpty != false { emptyState.id("empty-state") }
                         ForEach(store.selected?.messages ?? []) { message in
                             MessageRow(message: message, fileVault: store.fileVault,
                                 canRetry: message.role == .assistant && store.selected?.messages.last?.id == message.id && !store.isSending,
@@ -189,22 +189,23 @@ struct ChatWorkspaceView: View {
                                 edit: { inputFocused = false; sheet = .edit(message) },
                                 chooseVersion: { store.chooseVersion(messageID: message.id, index: $0) }).equatable().id(message.id)
                         }
+                        Color.clear.frame(height: 1).id("bottom").accessibilityHidden(true)
                     }.padding(.horizontal, 22).padding(.top, 20).padding(.bottom, 20)
                         .frame(maxWidth: 780).frame(maxWidth: .infinity)
-                    Color.clear.frame(height: 1).id("bottom")
                         .background(GeometryReader { geometry in
                             Color.clear.preference(key: ChatBottomKey.self, value: geometry.frame(in: .named("chat-scroll")).maxY)
                         })
-                  }
                 }
+                // The tall welcome view must not donate its cached scroll offset
+                // to the much shorter first exchange. History switches also reset it.
+                .id("\(store.selectedID?.uuidString ?? "none")-\(store.selected?.messages.isEmpty != false)")
+                .accessibilityIdentifier("chat.conversation")
                 .coordinateSpace(name: "chat-scroll")
-                .scrollDismissesKeyboard(.interactively)
-                .task {
-                    await Task.yield()
-                    if store.selected?.messages.isEmpty == false { proxy.scrollTo("bottom", anchor: .bottom) }
-                }
+                .scrollDismissesKeyboard(.immediately)
+                .task { requestScroll(proxy) }
+                .simultaneousGesture(TapGesture().onEnded { inputFocused = false }, including: inputFocused ? .all : .none)
                 .simultaneousGesture(DragGesture().onChanged { value in
-                    isDragging = true
+                    isDragging = true; inputFocused = false
                     if value.translation.height > 12 { followOutput = false }
                 }.onEnded { _ in isDragging = false; if isNearBottom { followOutput = true } })
                 .onPreferenceChange(ChatBottomKey.self) { bottom in
@@ -212,35 +213,48 @@ struct ChatWorkspaceView: View {
                     if isNearBottom && !isDragging { followOutput = true }
                 }
                 .onChange(of: store.selected?.messages.last?.text) { _, _ in
-                    if followOutput && !isDragging { proxy.scrollTo("bottom", anchor: .bottom) }
+                    requestScroll(proxy)
                 }
                 .onChange(of: store.selected?.messages.count) { _, _ in
-                    if followOutput { proxy.scrollTo("bottom", anchor: .bottom) }
+                    requestScroll(proxy)
                 }
                 .onChange(of: store.selected?.messages.last?.toolActivities) { _, _ in
-                    if followOutput && !isDragging { proxy.scrollTo("bottom", anchor: .bottom) }
+                    requestScroll(proxy)
                 }
                 .onChange(of: store.selected?.messages.last?.attachments) { _, _ in
-                    if followOutput && !isDragging { proxy.scrollTo("bottom", anchor: .bottom) }
+                    requestScroll(proxy)
                 }
                 .onChange(of: store.selectedID) { _, _ in
                     followOutput = true
-                    Task { @MainActor in await Task.yield(); proxy.scrollTo("bottom", anchor: .bottom) }
+                    scrollTask?.cancel(); scrollTask = nil; requestScroll(proxy)
                 }
-                .onChange(of: inputFocused) { _, focused in
-                    if focused && followOutput { proxy.scrollTo("bottom", anchor: .bottom) }
-                }
+                .onChange(of: viewport.size.height) { _, _ in requestScroll(proxy) }
+                .onChange(of: inputFocused) { _, _ in requestScroll(proxy) }
                 .overlay(alignment: .bottomTrailing) {
                     if !isNearBottom, store.selected?.messages.isEmpty == false {
                         Button {
                             followOutput = true
-                            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { proxy.scrollTo("bottom", anchor: .bottom) }
+                            requestScroll(proxy)
                         } label: { LiquidIcon(name: "arrow.down") }
                             .accessibilityLabel("回到最新回复").padding(.trailing, 20).padding(.bottom, 12)
                     }
                 }
             }
         }.clipped().contentShape(Rectangle())
+    }
+
+    private func requestScroll(_ proxy: ScrollViewProxy) {
+        guard followOutput, !isDragging, scrollTask == nil, store.selected?.messages.isEmpty == false else { return }
+        // Coalesce streaming updates and wait for message/composer/keyboard layout.
+        // Immediate scrollTo during those changes can overshoot estimated lazy rows.
+        scrollTask = Task { @MainActor in
+            do { try await Task.sleep(nanoseconds: 50_000_000) } catch { return }
+            if followOutput && !isDragging && store.selected?.messages.isEmpty == false {
+                var transaction = Transaction(); transaction.disablesAnimations = true
+                withTransaction(transaction) { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
+            scrollTask = nil
+        }
     }
 
     private var emptyState: some View {
@@ -276,7 +290,6 @@ struct ChatWorkspaceView: View {
                         .frame(maxWidth: .infinity, alignment: .leading).padding(14).background(Palette.card, in: RoundedRectangle(cornerRadius: 18))
                 }.accessibilityLabel("查看待确认的工具调用")
             }
-            VStack(alignment: .leading, spacing: 8) {
                 if !(store.selected?.draftAttachments ?? []).isEmpty {
                     ScrollView(.horizontal) {
                         HStack(spacing: 8) {
@@ -284,29 +297,25 @@ struct ChatWorkspaceView: View {
                                 AttachmentCard(file: file, url: try? store.fileVault?.exportURL(file), remove: { store.removeDraftFile(file.id) }).frame(width: 240)
                             }
                         }.padding(.horizontal, 12)
-                    }.padding(.top, 12)
+                    }
                     Text("附件将随问题发送给当前 AI 服务；PDF/Word/Excel 提取文字，图片交给视觉模型。")
                         .font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 18)
                 }
-                TextField("发送消息", text: Binding(get: { draft }, set: { draft = $0 }), axis: .vertical)
-                    .lineLimit(1...(dynamicTypeSize.isAccessibilitySize ? 4 : 8)).focused($inputFocused)
-                    .padding(.top, 16).padding(.horizontal, 18)
-                    .accessibilityLabel("消息内容").accessibilityIdentifier("chat.composer").textInputAutocapitalization(.sentences)
-                HStack(spacing: 10) {
+            LiquidCluster {
+                HStack(alignment: .bottom, spacing: 8) {
                     Menu {
                         Button("添加文件", systemImage: "doc.badge.plus") { inputFocused = false; importTarget = store.selectedID; importing = true }
                         Button("选择照片", systemImage: "photo") { inputFocused = false; showingPhotos = true }
                         Button("工具与 MCP", systemImage: "wrench.and.screwdriver") { inputFocused = false; sheet = .tools }
                     } label: {
-                        Image(systemName: "plus").font(.system(size: 18, weight: .medium)).frame(width: 32, height: 40)
+                        LiquidIcon(name: "plus")
                     }.disabled(store.isImporting || photoLoading || !store.storageReady).accessibilityLabel("添加附件或工具")
-                    Text(store.isImporting || photoLoading ? "正在读取附件…" : store.isWaitingForForeground ? "已暂停，返回后继续" : store.isSending ? "正在回复" : store.connectionName)
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                    if store.toolSettings.enabled {
-                        Button { inputFocused = false; sheet = .tools } label: { Image(systemName: "wrench.and.screwdriver").font(.caption).frame(width: 28, height: 36) }
-                            .foregroundStyle(.secondary).accessibilityLabel("工具已启用，打开工具设置")
-                    }
-                    Spacer(minLength: 0)
+                        .accessibilityIdentifier("chat.add")
+                    HStack(alignment: .bottom, spacing: 8) {
+                        TextField("说点什么…", text: Binding(get: { draft }, set: { draft = $0 }), axis: .vertical)
+                            .lineLimit(1...(dynamicTypeSize.isAccessibilitySize ? 4 : 8)).focused($inputFocused)
+                            .padding(.leading, 18).padding(.vertical, 13).frame(maxWidth: .infinity, minHeight: 48)
+                            .accessibilityLabel("消息内容").accessibilityIdentifier("chat.composer").textInputAutocapitalization(.sentences)
                     Button(action: sendOrStop) {
                         Image(systemName: store.isSending ? "stop.fill" : "arrow.up")
                             .font(.system(size: 17, weight: .semibold)).frame(width: 40, height: 40)
@@ -314,8 +323,14 @@ struct ChatWorkspaceView: View {
                     }.disabled(!store.isSending && !canSend).opacity(!store.isSending && !canSend ? 0.35 : 1)
                         .accessibilityLabel(store.isSending ? "停止生成" : "发送消息")
                         .keyboardShortcut(.return, modifiers: .command)
-                }.padding(.leading, 18).padding(.trailing, 8).padding(.bottom, 8)
-            }.liquidSurface(radius: 28)
+                        .padding(.trailing, 4).padding(.bottom, 4)
+                    }.liquidSurface(radius: 26)
+                }
+            }
+            if store.isImporting || photoLoading || store.isWaitingForForeground {
+                Text(store.isWaitingForForeground ? "已暂停，返回后继续" : "正在读取附件…")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             if !inputFocused {
                 Text("AI 的回答可能不准确，请核实重要信息。")
                     .font(.system(size: 10)).foregroundStyle(.secondary).multilineTextAlignment(.center)

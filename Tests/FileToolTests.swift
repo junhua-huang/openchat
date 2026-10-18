@@ -90,13 +90,28 @@ final class FileToolTests: XCTestCase {
         let read = try await runtime.execute(ToolCall(id: "read2", name: "read_file", arguments: "{\"file_id\":\"\(file.id.uuidString)\",\"offset\":2,\"length\":4}"))
         XCTAssertTrue(read.contains("真实文件"))
     }
-    @MainActor func testRemoteWebReadRequiresApprovalAndRejectsBeforeNetwork() async throws {
+    @MainActor func testPublicWebReadsDoNotPromptAndCarryNoAccountCredentials() async throws {
         let root = directory(); defer { try? FileManager.default.removeItem(at: root) }
         let vault = try FileVault(accountID: UUID(), root: root); var approvals = 0
-        let runtime = ToolRuntime(vault: vault, files: [], servers: [], approve: { _, _ in approvals += 1; return false }, event: { _ in })
-        let result = try await runtime.execute(ToolCall(id: "web", name: "read_webpage", arguments: #"{"url":"https://example.com/article"}"#))
-        XCTAssertEqual(approvals, 1); XCTAssertTrue(result.contains("用户拒绝"))
-        XCTAssertFalse(result.contains("example.com"))
+        var reads = 0
+        let runtime = ToolRuntime(vault: vault, files: [], servers: [], approve: { _, _ in approvals += 1; return false }, event: { _ in },
+            webpageTransport: { request in
+                reads += 1; XCTAssertEqual(request.httpMethod, "GET")
+                XCTAssertNil(request.value(forHTTPHeaderField: "Authorization")); XCTAssertNil(request.value(forHTTPHeaderField: "Cookie"))
+                return (Data("<p>公开网页正文</p><script>ignored()</script>".utf8),
+                        HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "text/html; charset=utf-8"])!)
+            })
+        for id in ["web1", "web2"] {
+            let result = try await runtime.execute(ToolCall(id: id, name: "read_webpage", arguments: #"{"url":"https://example.com/article"}"#))
+            XCTAssertTrue(result.contains("公开网页正文")); XCTAssertFalse(result.contains("ignored()"))
+        }
+        XCTAssertEqual(approvals, 0); XCTAssertEqual(reads, 2)
+        for raw in ["http://example.com/", "https://user:secret@example.com/", "file:///tmp/test"] {
+            let arguments = String(decoding: try JSONSerialization.data(withJSONObject: ["url": raw]), as: UTF8.self)
+            let result = try await runtime.execute(ToolCall(id: "invalid", name: "read_webpage", arguments: arguments))
+            XCTAssertTrue(result.contains("公开 HTTPS"))
+        }
+        XCTAssertEqual(reads, 2); XCTAssertEqual(approvals, 0)
     }
     @MainActor func testRuntimeCanZipExistingBinaryAttachments() async throws {
         let root = directory(); defer { try? FileManager.default.removeItem(at: root) }

@@ -51,7 +51,7 @@ struct AccountView: View {
                         Picker("外观", selection: $appearance) {
                             ForEach(AppAppearance.allCases) { option in Text(option.title).tag(option.rawValue) }
                         }
-                        Toggle("触感反馈", isOn: $hapticFeedback)
+                        Toggle("触感反馈", isOn: $hapticFeedback).tint(Palette.switchTint)
                     }.listRowBackground(Palette.card.opacity(0.78))
                     Section("账户与工作空间") {
                         ForEach(auth.accounts) { account in
@@ -91,7 +91,7 @@ struct AccountView: View {
                             OpenChatMark(size: 42)
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("openchat").font(.system(.subheadline, design: .rounded, weight: .semibold))
-                                Text("\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.0.3") · 开源客户端")
+                                Text("\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.1.0") · 开源客户端")
                                     .font(.caption).foregroundStyle(.secondary)
                             }.padding(.leading, 7)
                         }.padding(.vertical, 5)

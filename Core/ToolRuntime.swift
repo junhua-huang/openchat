@@ -47,7 +47,6 @@ private struct Arithmetic {
     private var clients: [UUID: MCPClient] = [:]
     private let searchClient: WebSearchClient
     private var searchEnabled = false
-    var collectedArtifactIDs: Set<String> = []
     init(vault: FileVault, files: [ChatAttachment], servers: [MCPServer],
          approve: @escaping (String, String) async throws -> Bool, event: @escaping (ToolEvent) -> Void,
          searchClient: WebSearchClient = WebSearchClient()) {
@@ -64,8 +63,8 @@ private struct Arithmetic {
     private static func schema(_ fields: [String: [String: Any]], required: [String]) -> [String: Any] {
         ["type": "object", "properties": fields, "required": required, "additionalProperties": false]
     }
-    func definitions(settings: ToolSettings = ToolSettings(), hostedSearch: Bool = false) throws -> [ToolDefinition] {
-        searchEnabled = settings.enabled && settings.allowsPublicSearch && !(hostedSearch && settings.webSearch)
+    func definitions(settings: ToolSettings = ToolSettings()) throws -> [ToolDefinition] {
+        searchEnabled = settings.enabled && settings.allowsPublicSearch
         var tools = [
             ToolDefinition(name: "calculate", description: "在设备上准确计算四则运算，支持小数和括号。", parameters: Self.schema(["expression": ["type": "string"]], required: ["expression"])),
             ToolDefinition(name: "read_file", description: "读取本次对话附件的文本。只能使用消息中列出的 file_id。offset 和 length 按字符计，length 最多 20000。", parameters: Self.schema([

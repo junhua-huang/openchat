@@ -9,6 +9,9 @@ enum AppAppearance: String, CaseIterable, Identifiable {
 }
 
 enum Palette {
+    // The global monochrome tint makes the dark-mode switch track white,
+    // indistinguishable from its white thumb. Use UIKit's native switch color.
+    static let switchTint = Color(uiColor: .systemGreen)
     static let accent = adaptive(0x242424, 0xEEEEEE)
     static let action = adaptive(0x171717, 0xEEEEEE)
     static let onAction = adaptive(0xFFFFFF, 0x151515)

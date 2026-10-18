@@ -8,6 +8,13 @@ struct WorkspacePreview: View {
     var body: some View {
         if ProcessInfo.processInfo.arguments.contains("--ui-models") {
             ModelPickerView(store: store) { store.selectModel($0) }.task { await store.loadModels() }
+        } else if ProcessInfo.processInfo.arguments.contains("--ui-mcp") {
+            NavigationStack {
+                MCPDiscoveryView(connections: store.mcpConnections, client: MCPRegistryClient(transport: { request in
+                    let data = Data(#"{"servers":[{"server":{"name":"io.synthetic/docs","title":"测试文档服务","description":"仅用于离线界面验证","remotes":[{"type":"streamable-http","url":"https://synthetic.invalid/mcp"}]}}]}"#.utf8)
+                    return (data, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: [:])!)
+                }))
+            }
         } else if ProcessInfo.processInfo.arguments.contains("--ui-tools") {
             ToolsSettingsView(store: store)
         } else if ProcessInfo.processInfo.arguments.contains("--ui-approval") {
@@ -62,11 +69,25 @@ struct WorkspacePreview: View {
                         attachments: [file], toolActivities: [ToolActivity(id: "synthetic-file", name: "create_file", state: "complete", detail: "文件已保存到本机")])]
                 thread.draft = "再分析一下这个需求"; thread.draftAttachments = [source]
             }
+            if ProcessInfo.processInfo.arguments.contains("--ui-timeline") {
+                let before = "先计算 1 + 1。\n\n"
+                let middle = "结果是 2。\n\n接着检索公开资料。\n\n"
+                thread.messages = [ChatMessage(role: .user, text: "展示工具执行顺序"),
+                    ChatMessage(role: .assistant, text: before + middle + "这是最终总结，可以在下方重新查看完整工具记录。", toolActivities: [
+                        ToolActivity(id: "preview-calc", name: "calculate", state: "complete", detail: "2", textOffset: before.count),
+                        ToolActivity(id: "preview-search", name: "search_web", state: "complete", detail: "合成检索结果", textOffset: before.count + middle.count)])]
+            }
             try JSONEncoder().encode(ChatArchive(threads: [thread], selectedID: thread.id))
                 .write(to: directory.appendingPathComponent(connection.id.uuidString + ".json"))
         } catch { assertionFailure("Unable to prepare synthetic UI fixture") }
         return ChatStore(accountID: connection.id, auth: auth, apiConnection: connection,
-                         storageDirectory: directory, transport: { _, _, _, delta in delta("这是本地界面预览。") },
+                         storageDirectory: directory, transport: { _, _, _, delta in
+                             if ProcessInfo.processInfo.arguments.contains("--ui-background") {
+                                 delta("开始生成…")
+                                 try await Task.sleep(nanoseconds: 8_000_000_000)
+                                 delta("回复已在后台完成")
+                             } else { delta("这是本地界面预览。") }
+                         },
                          mcpConnections: MCPConnections(memoryOnly: true, servers: [MCPServer(name: "示例 MCP", endpoint: "https://synthetic.invalid/mcp")]))
     }
 }

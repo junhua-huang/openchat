@@ -101,33 +101,6 @@ final class ReliabilityTests: XCTestCase {
         }
         XCTAssertTrue(try ChatAgentClient.historyInput([ChatMessage(role: .assistant, text: "", status: .failed)], responses: true, vault: vault).isEmpty)
     }
-    @MainActor func testRepeatedContainerCitationsDownloadOnlyOnceAcrossToolRounds() async throws {
-        let root = directory(); defer { try? FileManager.default.removeItem(at: root) }
-        let runtime = ToolRuntime(vault: try FileVault(accountID: UUID(), root: root), files: [], servers: [], approve: { _, _ in false }, event: { _ in })
-        let connection = APIConnection(name: "Synthetic", baseURL: "https://api.openai.com/v1", apiKey: "synthetic", modelIDs: ["m"])
-        let endpoint = AgentEndpoint(token: "synthetic", connection: connection)
-        let output: [[String: Any]] = [["type": "message", "content": [["annotations": [["type": "container_file_citation", "container_id": "cntr_test", "file_id": "file_test", "filename": "结果.txt"]]]]]]
-        var downloads = 0
-        for _ in 0..<2 {
-            try await ChatAgentClient.collectFiles(output, endpoint: endpoint, runtime: runtime, download: { _ in downloads += 1; return Data("实际文件".utf8) })
-        }
-        XCTAssertEqual(downloads, 1); XCTAssertEqual(runtime.files.count, 1)
-        XCTAssertEqual(runtime.files.first?.extractedText, "实际文件")
-    }
-    @MainActor func testGeneratedImagesAreDeduplicatedAndInvalidImageEncodingReportsFailure() async throws {
-        let root = directory(); defer { try? FileManager.default.removeItem(at: root) }
-        let runtime = ToolRuntime(vault: try FileVault(accountID: UUID(), root: root), files: [], servers: [], approve: { _, _ in false }, event: { _ in })
-        let endpoint = AgentEndpoint(token: "synthetic", connection: APIConnection(name: "Test", baseURL: "https://api.openai.com/v1", apiKey: "synthetic", modelIDs: ["m"]))
-        let image = try XCTUnwrap(UIGraphicsImageRenderer(size: CGSize(width: 2, height: 2)).image { _ in }.pngData())
-        let output: [[String: Any]] = [["type": "image_generation_call", "id": "img_test", "result": image.base64EncodedString()]]
-        for _ in 0..<2 { try await ChatAgentClient.collectFiles(output, endpoint: endpoint, runtime: runtime) }
-        XCTAssertEqual(runtime.files.count, 1)
-        do {
-            try await ChatAgentClient.collectFiles([["type": "image_generation_call", "id": "img_bad", "result": "not base64 !"]], endpoint: endpoint, runtime: runtime)
-            XCTFail("Invalid data must not be reported as a successfully saved image")
-        } catch { XCTAssertTrue(error.localizedDescription.contains("无效")) }
-        XCTAssertEqual(runtime.files.count, 1)
-    }
     @MainActor func testZipHandlesCollidingOriginalAndPrefixedFilenames() async throws {
         let root = directory(); defer { try? FileManager.default.removeItem(at: root) }
         let vault = try FileVault(accountID: UUID(), root: root)
@@ -140,7 +113,7 @@ final class ReliabilityTests: XCTestCase {
         XCTAssertEqual(zip.entries.count, 3); XCTAssertEqual(Set(zip.entries.map(\.name)).count, 3)
         XCTAssertEqual(try Set(zip.entries.map { String(decoding: try zip.content($0.name), as: UTF8.self) }), Set(["item-0", "item-1", "item-2"]))
     }
-    @MainActor func testMultilineToolProgressUsesValidatedSSEFraming() throws {
+    @MainActor func testRemovedCloudToolEventsDoNotCreateToolActivities() throws {
         let response = HTTPURLResponse(url: URL(string: "https://example.com")!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: [:])!
         var decoder = ResponsesWireDecoder(response: response); var activities: [ToolActivity] = []
         for line in ["data: {", #"data: "type":"response.web_search_call.in_progress","item_id":"search1"}"#] {
@@ -148,17 +121,17 @@ final class ReliabilityTests: XCTestCase {
         }
         XCTAssertTrue(activities.isEmpty)
         XCTAssertFalse(try decoder.push("", onActivity: { activities.append($0) }) { _ in })
-        XCTAssertEqual(activities.map(\.id), ["search1"])
+        XCTAssertTrue(activities.isEmpty)
         var failed = ResponsesWireDecoder(response: HTTPURLResponse(url: response.url!, statusCode: 401, httpVersion: "HTTP/1.1", headerFields: [:])!)
         XCTAssertThrowsError(try failed.push(#"{"type":"response.web_search_call.completed","item_id":"bad"}"#, onActivity: { activities.append($0) }) { _ in })
-        XCTAssertEqual(activities.count, 1)
+        XCTAssertTrue(activities.isEmpty)
     }
     @MainActor func testLiveResponseTaskIsCancelledAfterTerminalEvent() async throws {
         let session = session(); let stopped = expectation(description: "Underlying response task cancelled")
         OpenResponseProtocol.status = 200; OpenResponseProtocol.stopped = stopped
         OpenResponseProtocol.payload = Data("data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[]}}\n\n".utf8)
         defer { OpenResponseProtocol.stopped = nil; session.invalidateAndCancel() }
-        let output = try await ChatAgentClient.responsesTurn(URLRequest(url: URL(string: "https://synthetic.invalid/stream")!), using: session, delta: { _ in }, activity: { _ in })
+        let output = try await ChatAgentClient.responsesTurn(URLRequest(url: URL(string: "https://synthetic.invalid/stream")!), using: session, delta: { _ in })
         XCTAssertTrue(output.isEmpty)
         await fulfillment(of: [stopped], timeout: 2)
     }

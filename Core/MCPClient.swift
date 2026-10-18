@@ -135,7 +135,7 @@ struct MCPServer: Codable, Identifiable, Equatable {
     func connect() async throws {
         if initialized { return }
         let result = try await rpc("initialize", ["protocolVersion": version, "capabilities": [:],
-            "clientInfo": ["name": "OpenChat iOS", "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.0.3"]])
+            "clientInfo": ["name": "OpenChat iOS", "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.1.0"]])
         guard let negotiated = result["protocolVersion"] as? String,
               ["2025-03-26", "2025-06-18", "2025-11-25"].contains(negotiated) else {
             throw AppFailure.message("MCP 服务协商的协议版本暂不支持。")

@@ -126,7 +126,5 @@ final class WebSearchTests: XCTestCase {
         XCTAssertNil(try runtime.definitions(settings: disabled).first { $0.name == "search_web" })
         let rejected = try await runtime.execute(ToolCall(id: "disabled", name: "search_web", arguments: #"{"query":"AI"}"#))
         XCTAssertTrue(rejected.contains("关闭")); XCTAssertEqual(searches, 1)
-        var hosted = ToolSettings(); hosted.webSearch = true
-        XCTAssertNil(try runtime.definitions(settings: hosted, hostedSearch: true).first { $0.name == "search_web" })
     }
 }

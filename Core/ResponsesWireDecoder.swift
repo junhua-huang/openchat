@@ -77,10 +77,6 @@ struct ResponsesWireDecoder {
         do { try collected.consume(event) }
         catch { throw ResponseFailure.make(response: response, shape: "incomplete_tool_output", fallback: error.localizedDescription) }
         let type = event["type"] as? String ?? ""
-        for tool in ["web_search_call", "code_interpreter_call", "image_generation_call"] where type.hasPrefix("response." + tool + ".") {
-            let id = event["item_id"] as? String ?? tool
-            onActivity?(ToolActivity(id: id, name: tool, state: type.hasSuffix("completed") ? "complete" : "running", detail: type.hasSuffix("completed") ? "已完成" : "正在执行"))
-        }
         if done, let value = event["response"] as? [String: Any] {
             do { output = try collected.finish(value["output"] as? [[String: Any]] ?? []) }
             catch { throw ResponseFailure.make(response: response, shape: "incomplete_tool_output", fallback: error.localizedDescription) }

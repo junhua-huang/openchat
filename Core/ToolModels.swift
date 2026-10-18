@@ -53,9 +53,6 @@ struct ToolSettings: Codable, Equatable {
         get { publicSearch ?? true }
         set { publicSearch = newValue }
     }
-    var webSearch = false
-    var codeInterpreter = false
-    var imageGeneration = false
 }
 
 struct ToolActivity: Codable, Identifiable, Equatable {
@@ -64,6 +61,9 @@ struct ToolActivity: Codable, Identifiable, Equatable {
     var state: String = "running"
     var detail: String = ""
     var sources: [WebSearchResult]?
+    // Character offset of the first event in the received assistant text.
+    // Nil in older archives, whose event order cannot be reconstructed.
+    var textOffset: Int?
 }
 
 struct ToolCall: Equatable {
@@ -99,4 +99,6 @@ struct ToolApproval: Identifiable {
 enum ToolEvent {
     case activity(ToolActivity)
     case file(ChatAttachment)
+    case beginInference, restartInference
+    case waitingForForeground(Bool)
 }

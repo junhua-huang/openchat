@@ -23,23 +23,21 @@ final class AgentToolTests: XCTestCase {
             XCTAssertFalse(stream.completed)
         }
     }
-    @MainActor func testHostedToolsNeverLeakIntoPlanOrThirdPartyRequests() throws {
-        var settings = ToolSettings(); settings.webSearch = true; settings.codeInterpreter = true; settings.imageGeneration = true
-        let custom = APIConnection(name: "Synthetic", baseURL: "https://example.com/v1", apiKey: "synthetic-key", modelIDs: ["m"])
-        for endpoint in [AgentEndpoint(token: "synthetic", connection: nil), AgentEndpoint(token: "synthetic", connection: custom)] {
-            let body = try ChatAgentClient.body(model: "m", input: [], endpoint: endpoint, effort: .automatic, definitions: [], settings: settings)
-            XCTAssertTrue((body["tools"] as? [[String: Any]] ?? []).isEmpty)
+    @MainActor func testRequestsUseOnlyClientFunctionsAndIgnoreOldCloudFlags() throws {
+        let settings = try JSONDecoder().decode(ToolSettings.self, from: Data(#"{"enabled":true,"webSearch":true,"codeInterpreter":true,"imageGeneration":true}"#.utf8))
+        let definition = ToolDefinition(name: "calculate", description: "calculate", parameters: ["type": "object", "properties": [:]])
+        let official = APIConnection(name: "OpenAI", baseURL: "https://api.openai.com/v1", apiKey: "synthetic", modelIDs: ["m"])
+        let custom = APIConnection(name: "Custom", baseURL: "https://example.com/v1", apiKey: "synthetic", modelIDs: ["m"])
+        for endpoint in [AgentEndpoint(token: "synthetic", connection: nil), AgentEndpoint(token: "synthetic", connection: official), AgentEndpoint(token: "synthetic", connection: custom)] {
+            let body = try ChatAgentClient.body(model: "m", input: [], endpoint: endpoint, effort: .automatic, definitions: [definition], settings: settings)
+            let tools = try XCTUnwrap(body["tools"] as? [[String: Any]])
+            XCTAssertEqual(tools.count, 1); XCTAssertEqual(tools.first?["type"] as? String, "function")
+            let raw = String(decoding: try JSONSerialization.data(withJSONObject: body), as: UTF8.self)
+            for removed in ["web_search", "code_interpreter", "image_generation", "file_ids"] { XCTAssertFalse(raw.contains(removed)) }
         }
-        let official = APIConnection(name: "OpenAI", baseURL: "https://api.openai.com/v1", apiKey: "synthetic-key", modelIDs: ["gpt-6.1-sol"])
-        let body = try ChatAgentClient.body(model: "gpt-6.1-sol", input: [], endpoint: AgentEndpoint(token: "synthetic", connection: official),
-            effort: .high, definitions: [], settings: settings, fileIDs: ["file-synthetic"])
-        XCTAssertEqual((body["tools"] as? [[String: Any]])?.count, 3)
-        XCTAssertEqual(body["store"] as? Bool, false)
-        let code = try XCTUnwrap((body["tools"] as? [[String: Any]])?.first { $0["type"] as? String == "code_interpreter" })
-        XCTAssertEqual((code["container"] as? [String: Any])?["file_ids"] as? [String], ["file-synthetic"])
-        settings.enabled = false
-        let disabled = try ChatAgentClient.body(model: "gpt-6.1-sol", input: [], endpoint: AgentEndpoint(token: "synthetic", connection: official), effort: .automatic, definitions: [], settings: settings)
-        XCTAssertNil(disabled["tools"]); XCTAssertNil(disabled["include"])
+        var disabled = settings; disabled.enabled = false
+        let body = try ChatAgentClient.body(model: "m", input: [], endpoint: AgentEndpoint(token: "synthetic", connection: nil), effort: .automatic, definitions: [definition], settings: disabled)
+        XCTAssertNil(body["tools"]); XCTAssertNil(body["include"])
     }
     @MainActor func testResponsesToolRoundTripPreservesEncryptedReasoningAndCreatesRealFile() async throws {
         let root = directory(); defer { try? FileManager.default.removeItem(at: root) }

@@ -17,7 +17,9 @@ final class ChatStore: ObservableObject {
     @Published var errorText: String?
     @Published private(set) var approvals: [ToolApproval] = []
     @Published private(set) var importingThreadIDs: Set<UUID> = []
+    @Published private(set) var waitingThreadIDs: Set<UUID> = []
     let mcpConnections: MCPConnections
+    let lifecycle: GenerationLifecycle
     private(set) var fileVault: FileVault?
     private var approvalContinuations: [UUID: CheckedContinuation<Bool, Error>] = [:]
     private let accountID: UUID
@@ -30,6 +32,7 @@ final class ChatStore: ObservableObject {
     private var runs: [UUID: UUID] = [:]
     private var responseIDs: [UUID: UUID] = [:]
     private var pendingText: [UUID: String] = [:]
+    private var inferenceText: [UUID: String] = [:]
     private var flushTasks: [UUID: Task<Void, Never>] = [:]
     private var draftTask: Task<Void, Never>?
     private var checkpointTask: Task<Void, Never>?
@@ -40,7 +43,7 @@ final class ChatStore: ObservableObject {
     var isImporting: Bool { selectedID.map { importingThreadIDs.contains($0) } ?? false }
     var selectedApproval: ToolApproval? { approvals.first { $0.threadID == selectedID } }
     var toolSettings: ToolSettings { selected?.toolSettings ?? ToolSettings() }
-    var canUseHostedTools: Bool { apiConnection?.isOfficialResponses == true }
+    var isWaitingForForeground: Bool { selectedID.map { waitingThreadIDs.contains($0) } ?? false }
     var isAPIConnection: Bool { apiConnection != nil }
     var canUseConnection: Bool { isAPIConnection || (!auth.isBusy && auth.activeAccount?.tokens?.permitsInference == true) }
     var connectionName: String { apiConnection?.name ?? "ChatGPT" }
@@ -55,10 +58,11 @@ final class ChatStore: ObservableObject {
     init(accountID: UUID, auth: AuthManager, apiConnection: APIConnection? = nil,
          storageDirectory: URL? = nil, transport: ChatTransport? = nil,
          mcpConnections: MCPConnections? = nil, agentTransport: ChatAgentTransport? = nil,
-         checkpointInterval: UInt64 = 2_000_000_000) {
+         checkpointInterval: UInt64 = 2_000_000_000, lifecycle: GenerationLifecycle? = nil) {
         self.accountID = accountID; self.auth = auth; self.apiConnection = apiConnection; self.transport = transport
         self.mcpConnections = mcpConnections ?? MCPConnections(); self.agentTransport = agentTransport
         self.checkpointInterval = max(10_000_000, checkpointInterval)
+        self.lifecycle = lifecycle ?? GenerationLifecycle()
         do {
             fileVault = try FileVault(accountID: accountID, root: storageDirectory?.appendingPathComponent("files"))
             var directory = try storageDirectory ?? FileManager.default.url(for: .applicationSupportDirectory,
@@ -159,6 +163,10 @@ final class ChatStore: ObservableObject {
         for id in Array(pendingText.keys) { flush(id) }
         persist()
     }
+    func sceneChanged(active: Bool) {
+        lifecycle.setActive(active)
+        flushDrafts()
+    }
     func delete(_ ids: Set<UUID>) {
         guard storageReady else { return }
         let previousFiles = referencedFiles()
@@ -221,6 +229,7 @@ final class ChatStore: ObservableObject {
         guard persist() else { mark(threadID, response.id, status: .failed, problem: "保存失败，未发送请求"); return }
         let runID = UUID(); runs[threadID] = runID; responseIDs[threadID] = response.id
         generatingThreadIDs.insert(threadID)
+        lifecycle.setWorking(true)
         requests[threadID] = Task { [weak self] in
             guard let self = self else { return }
             defer { if self.runs[threadID] == runID { self.cleanup(threadID); self.persist() } }
@@ -241,7 +250,7 @@ final class ChatStore: ObservableObject {
                     if let agent = self.agentTransport { try await agent(runtime, onDelta) }
                     else {
                         try await ChatAgentClient.run(endpoint: AgentEndpoint(token: token, connection: self.apiConnection), model: model,
-                            history: history, effort: effort, settings: settings, runtime: runtime, delta: onDelta)
+                            history: history, effort: effort, settings: settings, runtime: runtime, delta: onDelta, lifecycle: self.lifecycle)
                     }
                 }
                 guard self.runs[threadID] == runID else { return }
@@ -284,6 +293,8 @@ final class ChatStore: ObservableObject {
         flushTasks.removeValue(forKey: threadID)?.cancel()
         pendingText.removeValue(forKey: threadID); responseIDs.removeValue(forKey: threadID)
         requests.removeValue(forKey: threadID); runs.removeValue(forKey: threadID); generatingThreadIDs.remove(threadID)
+        inferenceText.removeValue(forKey: threadID); waitingThreadIDs.remove(threadID)
+        lifecycle.setWorking(!runs.isEmpty)
         if runs.isEmpty { checkpointTask?.cancel(); checkpointTask = nil }
     }
     private func scheduleCheckpoint() {
@@ -319,9 +330,7 @@ final class ChatStore: ObservableObject {
     }
     func setToolSettings(_ settings: ToolSettings) {
         guard !isSending, let i = threads.firstIndex(where: { $0.id == selectedID }) else { return }
-        var value = settings
-        if !canUseHostedTools { value.webSearch = false; value.codeInterpreter = false; value.imageGeneration = false }
-        threads[i].toolSettings = value; persist()
+        threads[i].toolSettings = settings; persist()
     }
     func importFiles(_ urls: [URL], threadID: UUID? = nil) async {
         guard storageReady, let id = threadID ?? selectedID, let vault = fileVault,
@@ -372,15 +381,28 @@ final class ChatStore: ObservableObject {
             if case .file(let file) = event { fileVault?.remove(file) }; return
         }
         switch event {
+        case .beginInference:
+            flush(threadID); inferenceText[threadID] = threads[i].messages[j].text
+            return
+        case .restartInference:
+            flush(threadID)
+            if let checkpoint = inferenceText[threadID] { threads[i].messages[j].text = checkpoint }
+            scheduleCheckpoint(); return
+        case .waitingForForeground(let waiting):
+            if waiting { waitingThreadIDs.insert(threadID) } else { waitingThreadIDs.remove(threadID) }
+            return
         case .file(let file):
             var files = threads[i].messages[j].attachments ?? []; files.append(file); threads[i].messages[j].attachments = files
         case .activity(let value):
+            flush(threadID)
             var activities = threads[i].messages[j].toolActivities ?? []
+            var value = value
             if let index = activities.firstIndex(where: { $0.id == value.id }) {
+                value.textOffset = activities[index].textOffset
                 guard activities[index] != value else { return }
                 activities[index] = value
             }
-            else { activities.append(value) }
+            else { value.textOffset = threads[i].messages[j].text.count; activities.append(value) }
             threads[i].messages[j].toolActivities = activities
         }
         if case .file = event { flush(threadID); persist() }

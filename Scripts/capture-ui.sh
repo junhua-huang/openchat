@@ -11,6 +11,12 @@ for appearance in light dark; do
   xcrun simctl launch "$capture_device_id" com.example.LiaoChat --ui-preview
   sleep 4
   xcrun simctl io "$capture_device_id" screenshot "build/ui/chat-$appearance.png"
+  if [[ "$appearance" == dark ]]; then
+    xcrun simctl terminate "$capture_device_id" com.example.LiaoChat || true
+    xcrun simctl launch "$capture_device_id" com.example.LiaoChat --ui-preview --ui-tools
+    sleep 4
+    xcrun simctl io "$capture_device_id" screenshot build/ui/tools-dark.png
+  fi
 done
 xcrun simctl ui "$capture_device_id" appearance light
 xcrun simctl terminate "$capture_device_id" com.example.LiaoChat || true
@@ -21,7 +27,7 @@ xcrun simctl terminate "$capture_device_id" com.example.LiaoChat || true
 xcrun simctl launch "$capture_device_id" com.example.LiaoChat --ui-preview --ui-models
 sleep 4
 xcrun simctl io "$capture_device_id" screenshot build/ui/model-effort-light.png
-for surface in files tools approval; do
+for surface in files tools approval timeline mcp; do
   xcrun simctl terminate "$capture_device_id" com.example.LiaoChat || true
   xcrun simctl launch "$capture_device_id" com.example.LiaoChat --ui-preview "--ui-$surface"
   sleep 4

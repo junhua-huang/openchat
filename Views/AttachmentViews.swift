@@ -103,7 +103,23 @@ struct ToolActivityRow: View {
                     }.font(.caption).tint(Palette.accent)
                 }
             }
-        }.foregroundStyle(.secondary).accessibilityElement(children: .combine)
+        }.foregroundStyle(.secondary).accessibilityElement(children: .contain)
+    }
+}
+
+struct ToolRecordsView: View {
+    let activities: [ToolActivity]
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 24) {
+                    ForEach(activities) { ToolActivityRow(activity: $0) }
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(22)
+            }.background(Palette.paper)
+                .navigationTitle("工具记录").navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+        }
     }
 }
 

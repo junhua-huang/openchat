@@ -35,6 +35,10 @@ jobs:
         continue-on-error: true
         timeout-minutes: 4
         run: python3 Scripts/check_search.py
+      - name: Check live MCP registry and recommended catalogs
+        continue-on-error: true
+        timeout-minutes: 4
+        run: python3 Scripts/check_mcp.py
   simulator:
     runs-on: macos-latest
     timeout-minutes: 30
@@ -57,11 +61,12 @@ jobs:
           with open(os.environ['GITHUB_ENV'], 'a') as f: f.write('SIMULATOR_ID=' + candidates[0]['udid'] + '\n')
           PY
       - name: Build and run tests
-        timeout-minutes: 12
+        timeout-minutes: 15
         run: |
           xcodebuild test -project LiaoChat.xcodeproj -scheme LiaoChat -configuration Debug \
             -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
             -derivedDataPath build/DerivedData -resultBundlePath build/Tests.xcresult \
+            -parallel-testing-enabled NO \
             CODE_SIGNING_ALLOWED=NO
       - name: Capture native chat UI
         timeout-minutes: 8

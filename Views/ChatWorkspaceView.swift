@@ -134,7 +134,11 @@ struct ChatWorkspaceView: View {
                 do { try apiConnections.select(nil) } catch { store.errorText = error.localizedDescription }
             }
         }
-        .onChange(of: scenePhase) { _, phase in if phase != .active { store.flushDrafts() } }
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            if phase == .active { store.sceneChanged(active: true) }
+            else if phase == .background { store.sceneChanged(active: false) }
+            else { store.flushDrafts() }
+        }
         .onDisappear { store.stopAll() }
     }
 
@@ -213,6 +217,12 @@ struct ChatWorkspaceView: View {
                 .onChange(of: store.selected?.messages.count) { _, _ in
                     if followOutput { proxy.scrollTo("bottom", anchor: .bottom) }
                 }
+                .onChange(of: store.selected?.messages.last?.toolActivities) { _, _ in
+                    if followOutput && !isDragging { proxy.scrollTo("bottom", anchor: .bottom) }
+                }
+                .onChange(of: store.selected?.messages.last?.attachments) { _, _ in
+                    if followOutput && !isDragging { proxy.scrollTo("bottom", anchor: .bottom) }
+                }
                 .onChange(of: store.selectedID) { _, _ in
                     followOutput = true
                     Task { @MainActor in await Task.yield(); proxy.scrollTo("bottom", anchor: .bottom) }
@@ -290,7 +300,7 @@ struct ChatWorkspaceView: View {
                     } label: {
                         Image(systemName: "plus").font(.system(size: 18, weight: .medium)).frame(width: 32, height: 40)
                     }.disabled(store.isImporting || photoLoading || !store.storageReady).accessibilityLabel("添加附件或工具")
-                    Text(store.isImporting || photoLoading ? "正在读取附件…" : store.isSending ? "正在回复" : store.connectionName)
+                    Text(store.isImporting || photoLoading ? "正在读取附件…" : store.isWaitingForForeground ? "已暂停，返回后继续" : store.isSending ? "正在回复" : store.connectionName)
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     if store.toolSettings.enabled {
                         Button { inputFocused = false; sheet = .tools } label: { Image(systemName: "wrench.and.screwdriver").font(.caption).frame(width: 28, height: 36) }

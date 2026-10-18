@@ -1,9 +1,9 @@
-# 2.0.2 工具、MCP 与文件
+# 2.1 工具、MCP 与文件
 
 ## 在手机上使用
 
 1. 输入框左下角“＋”可以选择照片或从“文件”导入。每条消息最多 4 个附件，每个不超过 10 MB；可直接发送附件，让模型分析。
-2. 点击“＋ → 工具与 MCP”或右上角更多菜单，管理本次对话的工具。本地工具和公开网页搜索默认启用，云端收费工具默认关闭。
+2. 点击“＋ → 工具与 MCP”或右上角更多菜单，管理本次对话的工具。本地工具和公开网页搜索默认启用；可以在发现页推荐、搜索和添加 MCP。
 3. 请求“把这段内容生成 Word / PDF / Excel”等。支持工具的模型可以创建真实附件；点击卡片预览，使用分享按钮“存储到文件”或发给其他应用。
 4. 模型需要读取网站或调用 MCP 时，聊天底部出现“等待确认”。打开后查看具体工具和参数，允许一次或拒绝。切换历史时，等待确认的对话显示手掌标记；停止生成会取消本机等待。
 
@@ -14,10 +14,9 @@
 | 导入文本、PDF、DOCX、XLSX、ZIP | 本机解析后发送文字 | 本机解析后发送文字 | 本机解析后发送文字 |
 | 图片理解 | 发送图片，取决于模型和账户支持 | 发送图片，取决于模型支持 | 需要兼容多模态消息格式 |
 | 计算、读取附件、生成文件和打包 | 需要模型支持函数调用 | 支持函数调用的模型 | 需要服务商支持函数调用 |
-| MCP 远程工具 | 手动添加服务器，逐次确认 | 手动添加服务器，逐次确认 | 手动添加服务器，逐次确认 |
+| MCP 远程工具 | 推荐／搜索／手动添加，逐次确认 | 推荐／搜索／手动添加，逐次确认 | 推荐／搜索／手动添加，逐次确认 |
 | 读取指定 HTTPS 网页 | 每次确认，无登录信息 | 每次确认，无登录信息 | 每次确认，无登录信息 |
-| 按关键词搜索公开网络 | 默认开启，无需搜索 API Key | 公开搜索；开启 OpenAI 内置搜索时优先使用内置搜索 | 默认开启，需要模型支持函数调用 |
-| 内置联网搜索、Python、图片生成 | 本版不发送这些云端工具 | 在工具设置中按需开启，服务商独立计费 | 不自动套用 OpenAI 的云端工具参数 |
+| 按关键词搜索公开网络 | 默认开启，无需搜索 API Key | 默认开启，无需搜索 API Key | 默认开启，需要模型支持函数调用 |
 
 API 连接可选择 Chat Completions 或 Responses。自动模式在官方 `api.openai.com` 使用 Responses，其他地址使用 Chat Completions。GPT-6.1 Sol / Astra 的工具调用需要 Responses。工具不支持时会保留已收到的内容并报告错误，不会偷偷换模型、改用另一份密钥或转到收费连接；也可在工具设置关闭工具，继续普通聊天。
 
@@ -29,7 +28,7 @@ API 连接可选择 Chat Completions 或 Responses。自动模式在官方 `api.
 
 支持最近一天、一周、一月和不限时间，单次最多 8 条。模型获得手机本地日期与时区、来源标题、真实链接、摘要和时间筛选是否生效。Bing RSS 回退不声称已应用日期筛选。筛选和摘要都不能证明新闻发表于今天，仍须读取原文核对日期。工具状态中可展开真实来源并打开原文；来源随回复版本保存。正文读取仍逐次确认 URL。
 
-公开搜索可在“工具与 MCP”中关闭；主工具开关关闭时也不会提供搜索。旧版本存档升级后保持可读，公开搜索默认开启。开启官方 OpenAI API 内置搜索时不再同时提供公开搜索工具，避免重复检索。
+公开搜索可在“工具与 MCP”中关闭；主工具开关关闭时也不会提供搜索。旧版本存档升级后保持可读，公开搜索默认开启。2.1 已删除 OpenAI 云端工具，所有连接均使用这里的公开搜索能力。
 
 ## 文件处理与边界
 
@@ -42,18 +41,22 @@ API 连接可选择 Chat Completions 或 Responses。自动模式在官方 `api.
 - 图片导入后转为 JPEG，最长边缩至 2048 像素，附可选的本机文字识别结果。视觉模型仍须支持图片；不能把文字识别当作完整图片理解。
 - 本地 `create_file` 提供 TXT、Markdown、CSV、JSON、HTML、SVG、PDF、DOCX、XLSX 和 ZIP。Word/PDF 为基础正文排版；Excel 为单工作表二维数据，数字写为数值，字符串不会作为公式执行。原生工具不是完整 Office 编辑器。
 - 单次生成正文最多 500 KB；单个文件及 ZIP 原始内容合计最多 10 MB。每问最多 8 轮、24 次本地或 MCP 工具执行。
-- 图片生成返回的图片、Python 的文件引用，以及 MCP 的图片或内嵌资源 blob，只有成功取回并保存到本机后才出现附件卡片。MCP `resource_link` 仅返回资源地址，不会擅自附带凭据去下载。
+- MCP 返回的图片或内嵌资源 blob，只有成功取回并保存到本机后才出现附件卡片。MCP `resource_link` 仅返回资源地址，不会擅自附带凭据去下载。
 - 模型文本中的 `sandbox:` 链接只有匹配当前回复真实附件时才可预览；虚构路径会明确提示没有对应文件。
 
-## Python 文件分析与云端费用
+## 工具过程与后台切换
 
-Python、OpenAI 内置搜索和图片生成仅在官方 OpenAI API 的 Responses 连接中提供独立开关，默认关闭；公开网页搜索不要求该 API 连接。云端费用、模型支持和权限由你的 API 账户决定。
+工具在实际发生的正文位置显示，回复底部的“工具记录”可重新查看全部状态和来源。旧存档缺少位置数据时只提供完整工具记录，不虚构时间顺序。
 
-开启 Python 后，当前对话附件及本轮新建文件会上传至 OpenAI 文件服务并传给分析容器，最多 8 个不同文件。上传文件设置创建后 1 小时过期；容器本身按服务商的保留、计费和过期规则处理。App 使用原始文件，因此 Python 可以处理 PDF、表格和图片，而不只看到本机提取的节选。模型引用的生成文件在响应完成后下载至本机，避免只展示过期的容器链接。
+生成时申请短时后台运行保护。iOS 后台时间有限；如果模型流因挂起而中断，回到前台后最多恢复当前模型请求一次，并撤回这一轮未完成的文字片段，避免重复正文。已经完成的工具结果继续用于后续回答，工具不自动重放。普通前台网络错误、权限错误及用户停止不会自动重试。
+
+App 被强制关闭或系统回收后无法保证自动续传；本机保留已收到的文字、文件和工具状态。MCP 调用在网络中断时也不能保证远程操作回滚，仍须按工具结果确认。
 
 ## MCP 接入
 
-在“工具与 MCP → 添加 MCP 服务器”填写名称、HTTPS MCP 端点和可选 Bearer Token。启用并保存时完成 `initialize`、`notifications/initialized` 和分页 `tools/list`；停用可以直接保存，不要求服务在线。
+在“工具与 MCP → 发现 MCP”可浏览 DeepWiki、Microsoft Learn、Context7，搜索官方 MCP Registry 的服务名称并分页浏览。中文用途按钮会映射到常用英文关键词。详情页会说明兼容性和授权要求；选“添加连接”预填端点，确认后获取工具目录。推荐及目录收录均不等于安全认证。需要电脑运行、本地 stdio、自定义必需请求头或专属地址的条目会标明限制。
+
+也可以在“工具与 MCP → 添加 MCP 服务器”填写名称、HTTPS MCP 端点和可选 Bearer Token。启用并保存时完成 `initialize`、`notifications/initialized` 和分页 `tools/list`；停用可以直接保存，不要求服务在线。
 
 实现 Streamable HTTP 的 POST JSON / SSE 响应、请求 ID 校验、会话 ID 和协议版本 Header。工具通过 `tools/call` 调用，返回结果再交回模型。每个服务器最多 64 个工具，全部启用工具合计最多 100 个且定义不超过 250 KB。连接更改对下一次请求生效。
 
@@ -63,7 +66,7 @@ Python、OpenAI 内置搜索和图片生成仅在官方 OpenAI API 的 Responses
 
 MCP 凭据保存在设备钥匙串，不进入模型工具定义、聊天 JSON 或日志。文件和聊天按 AI 连接 UUID 隔离，启用完整文件保护并排除系统备份。工具只能读取当前对话提供的附件 ID，不能指定任意本机路径。
 
-2.0.2 在生成期间定时保存已收到的文字，追问也携带中断回复的实际内容并标明未完成；相同云端文件或图片在一次请求的多轮工具调用中只保存一次。Word/Excel/ZIP 与附件处理在后台执行，取消时清理尚未发布的文件；原生 PDF 排版保留在主执行器。
+2.0.2 在生成期间定时保存已收到的文字，追问也携带中断回复的实际内容并标明未完成。Word/Excel/ZIP 与附件处理在后台执行，取消时清理尚未发布的文件；原生 PDF 排版保留在主执行器。
 
 草稿附件、回复文件、工具状态随会话保存；重新生成保留旧版本附件。编辑分支共享原附件引用，删除最后一处引用后才移除文件。取消或失败保留已完成的本机文件；旧版没有附件或工具字段的存档继续可读。
 
@@ -75,8 +78,11 @@ MCP 凭据保存在设备钥匙串，不进入模型工具定义、聊天 JSON �
 
 - [OpenAI Function calling](https://developers.openai.com/api/docs/guides/function-calling)
 - [OpenAI File inputs](https://developers.openai.com/api/docs/guides/file-inputs)
-- [OpenAI Code Interpreter](https://developers.openai.com/api/docs/guides/tools-code-interpreter)
-- [OpenAI Image generation](https://developers.openai.com/api/docs/guides/tools-image-generation)
 - [DuckDuckGo 非 JavaScript 搜索](https://duckduckgo.com/duckduckgo-help-pages/features/non-javascript/)
 - [MCP Streamable HTTP](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports)
 - [MCP Lifecycle](https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle)
+
+- [MCP Registry API](https://github.com/modelcontextprotocol/registry/blob/main/docs/reference/api/openapi.yaml)
+- [DeepWiki MCP](https://docs.devin.ai/work-with-devin/deepwiki-mcp)
+- [Microsoft Learn MCP](https://learn.microsoft.com/en-us/training/support/mcp)
+- [Context7 连接指南](https://context7.com/docs/resources/all-clients)

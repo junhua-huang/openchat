@@ -166,7 +166,19 @@ struct MCPServerEditor: View {
     }
     private var advancedSection: some View {
         Section {
-            DisclosureGroup("高级设置", isExpanded: $advanced) {
+            Button {
+                withAnimation { advanced.toggle() }
+            } label: {
+                HStack {
+                    Text("高级设置")
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.caption.weight(.semibold))
+                        .rotationEffect(.degrees(advanced ? 90 : 0)).foregroundStyle(.secondary)
+                }.contentShape(Rectangle())
+            }.buttonStyle(.plain).accessibilityIdentifier("mcp.advanced")
+                .accessibilityValue(advanced ? "已展开" : "已收起")
+                .accessibilityHint("显示或隐藏可选的连接设置")
+            if advanced {
                 TextField("名称（可选）", text: $name).accessibilityIdentifier("mcp.name")
                 if preset {
                     TextField("服务器地址", text: $endpoint).keyboardType(.URL).textInputAutocapitalization(.never)
@@ -183,7 +195,7 @@ struct MCPServerEditor: View {
                 }
                 Toggle("启用此连接", isOn: $enabled).tint(Palette.switchTint)
                 if let diagnostic = diagnostic { Text(diagnostic).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
-            }.accessibilityIdentifier("mcp.advanced")
+            }
         }.disabled(busy)
     }
     private var connectionAction: some View {

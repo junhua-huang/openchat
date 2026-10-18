@@ -91,7 +91,7 @@ struct AccountView: View {
                             OpenChatMark(size: 42)
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("openchat").font(.system(.subheadline, design: .rounded, weight: .semibold))
-                                Text("\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.1.2") · 开源客户端")
+                                Text("\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.1.3") · 开源客户端")
                                     .font(.caption).foregroundStyle(.secondary)
                             }.padding(.leading, 7)
                         }.padding(.vertical, 5)

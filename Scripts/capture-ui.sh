@@ -27,7 +27,7 @@ xcrun simctl terminate "$capture_device_id" com.example.LiaoChat || true
 xcrun simctl launch "$capture_device_id" com.example.LiaoChat --ui-preview --ui-models
 sleep 4
 xcrun simctl io "$capture_device_id" screenshot build/ui/model-effort-light.png
-for surface in files tools approval timeline mcp; do
+for surface in files tools approval timeline mcp github; do
   xcrun simctl terminate "$capture_device_id" com.example.LiaoChat || true
   xcrun simctl launch "$capture_device_id" com.example.LiaoChat --ui-preview "--ui-$surface"
   sleep 4

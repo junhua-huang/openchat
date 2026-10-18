@@ -63,6 +63,7 @@ struct MCPServerEditor: View {
     @State private var problem: String?
     @State private var task: Task<Void, Never>?
     @State private var confirmDelete = false
+    private var needsGitHubToken: Bool { MCPServer.isGitHubEndpoint(endpoint) }
     init(connections: MCPConnections, existing: MCPServer?, prefill: MCPServer? = nil) {
         self.connections = connections; self.existing = existing
         let source = existing ?? prefill
@@ -74,13 +75,22 @@ struct MCPServerEditor: View {
             Section {
                 TextField("名称", text: $name).accessibilityIdentifier("mcp.name")
                 TextField("https://example.com/mcp", text: $endpoint).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("mcp.endpoint")
-                SecureField("Bearer Token（可选）", text: $token).textInputAutocapitalization(.never).autocorrectionDisabled().privacySensitive()
+                SecureField(needsGitHubToken ? "GitHub Personal Access Token（必填）" : "Bearer Token（可选）", text: $token)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled().privacySensitive().accessibilityIdentifier("mcp.token")
                 Toggle("启用此连接", isOn: $enabled).tint(Palette.switchTint)
             } footer: { Text("保存前会建立 MCP 会话并获取工具目录。Token 仅发送给此 HTTPS 端点，不跟随重定向。") }.disabled(busy)
+            if needsGitHubToken {
+                Section("GitHub 授权") {
+                    Text("此服务需要 GitHub Personal Access Token。填写令牌本身，无需添加 Bearer 前缀，并按用途选择仓库与访问权限。此连接暂不支持网页 OAuth 登录。")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                    Link("创建 GitHub 访问令牌", destination: URL(string: "https://github.com/settings/personal-access-tokens/new")!)
+                        .accessibilityIdentifier("mcp.github-token-help")
+                }
+            }
             Section {
                 Button(action: save) { HStack { Text(enabled ? "连接、获取工具并保存" : "保存为停用连接"); Spacer(); if busy { ProgressView() } } }
                     .disabled(busy || name.isEmpty || endpoint.isEmpty)
-                if let problem = problem { Text(problem).font(.caption).foregroundStyle(.secondary) }
+                if let problem = problem { Text(problem).font(.caption).foregroundStyle(.secondary).accessibilityIdentifier("mcp.connection-error") }
             }
             if let existing = existing {
                 Section("上次获取的工具") {
@@ -93,7 +103,8 @@ struct MCPServerEditor: View {
                 }
                 Section { Button("删除此 MCP 连接", role: .destructive) { confirmDelete = true }.disabled(busy) }
             }
-        }.navigationTitle(existing == nil ? "添加 MCP" : "编辑 MCP").navigationBarTitleDisplayMode(.inline)
+        }.scrollDismissesKeyboard(.immediately)
+            .navigationTitle(existing == nil ? "添加 MCP" : "编辑 MCP").navigationBarTitleDisplayMode(.inline)
             .toolbar { if existing == nil { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } } } }
             .onDisappear { task?.cancel() }
             .confirmationDialog("删除 MCP 连接及凭据？", isPresented: $confirmDelete, titleVisibility: .visible) {

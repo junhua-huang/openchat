@@ -31,6 +31,45 @@ private final class MCPMockProtocol: URLProtocol {
 }
 
 final class MCPTests: XCTestCase {
+    @MainActor func testGitHubMissingTokenStopsBeforeAnyNetworkRequest() async throws {
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [MCPMockProtocol.self]
+        let session = URLSession(configuration: config); var requests = 0
+        defer { session.invalidateAndCancel(); MCPMockProtocol.handler = nil }
+        MCPMockProtocol.handler = { _ in requests += 1; return (401, [:], Data()) }
+        for endpoint in ["https://api.githubcopilot.com/mcp/", "https://API.GITHUBCOPILOT.COM/mcp/x/all/readonly"] {
+            let client = MCPClient(server: MCPServer(name: "GitHub", endpoint: endpoint), session: session)
+            do { try await client.connect(); XCTFail("GitHub requires a token") }
+            catch { XCTAssertEqual(error.localizedDescription, MCPServer.gitHubTokenRequired) }
+        }
+        XCTAssertEqual(requests, 0)
+        for endpoint in ["https://api.githubcopilot.com.evil.invalid/mcp/", "https://example.com/api.githubcopilot.com/mcp/", "https://api.githubcopilot.com/other"] {
+            XCTAssertFalse(MCPServer.isGitHubEndpoint(endpoint))
+        }
+    }
+    @MainActor func testHTTPFailuresKeepStatusAndActionWithoutLeakingResponseOrToken() async throws {
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [MCPMockProtocol.self]
+        let session = URLSession(configuration: config)
+        defer { session.invalidateAndCancel(); MCPMockProtocol.handler = nil }
+        for status in [401, 403, 404, 405, 429, 503, 307] {
+            MCPMockProtocol.handler = { _ in (status, ["Content-Type": "text/plain"], Data("server-secret-should-not-appear".utf8)) }
+            let client = MCPClient(server: MCPServer(name: "GitHub", endpoint: "https://api.githubcopilot.com/mcp/", token: "synthetic-pat"), session: session)
+            do { try await client.connect(); XCTFail("Expected HTTP failure") }
+            catch {
+                let message = error.localizedDescription
+                XCTAssertTrue(message.contains("HTTP \(status)")); XCTAssertFalse(message.contains("server-secret")); XCTAssertFalse(message.contains("synthetic-pat"))
+                if status == 401 { XCTAssertTrue(message.contains("访问令牌")) }
+                if status == 403 { XCTAssertTrue(message.contains("仓库访问权限")) }
+            }
+        }
+        let expired = HTTPURLResponse(url: URL(string: "https://example.com/mcp")!, statusCode: 404, httpVersion: nil, headerFields: [:])!
+        XCTAssertThrowsError(try MCPClient.validateResponse(expired, server: MCPServer(name: "Test", endpoint: "https://example.com/mcp"), hasSession: true)) {
+            XCTAssertTrue($0.localizedDescription.contains("未自动重放"))
+        }
+        MCPMockProtocol.handler = { _ in throw URLError(.timedOut) }
+        let timedOut = MCPClient(server: MCPServer(name: "Test", endpoint: "https://example.com/mcp"), session: session)
+        do { try await timedOut.connect(); XCTFail("Expected network failure") }
+        catch { XCTAssertEqual((error as? URLError)?.code, .timedOut) }
+    }
     @MainActor func testDisconnectResetsStatelessClientBeforeReconnect() async throws {
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [MCPMockProtocol.self]
         let session = URLSession(configuration: config)

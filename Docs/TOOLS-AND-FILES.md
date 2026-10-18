@@ -72,6 +72,12 @@ MCP 凭据保存在设备钥匙串，不进入模型工具定义、聊天 JSON �
 
 ## 验证与参考
 
+### GitHub MCP
+
+`https://api.githubcopilot.com/mcp/` 需要有效 GitHub 访问令牌，不能匿名连接。在配置页的官方入口创建 Personal Access Token，选择所需仓库与权限，将令牌本身粘贴到 Token 栏，无需添加 `Bearer ` 前缀。配置保存在本机钥匙串；此连接尚不支持网页 OAuth 登录。缺少 Token 会在请求前提示，HTTP 401 表示授权未被接受，403 提示检查访问权限或组织策略。
+
+- [GitHub 官方接入与授权说明](https://github.com/github/github-mcp-server/blob/main/docs/host-integration.md)
+
 测试使用合成文件、模拟模型响应与 URLProtocol MCP 服务器，不发起付费推理，也不持有你的 API 密钥。真实 ChatGPT 工具权限、外部服务器、图片/容器服务和真机交互仍需更新后验收。
 
 搜索新增合成测试覆盖中文参数、实体解码、包装链接、去重、异常页面、公开搜索回退、取消、旧设置兼容、来源版本保存及 ChatGPT 模式工具回传。`Scripts/check_search.py` 使用实际 Foundation 客户端进行不带 AI 凭据的公开网络探测；其结果独立于稳定的单元测试，具体可用性以当次运行和设备网络为准。

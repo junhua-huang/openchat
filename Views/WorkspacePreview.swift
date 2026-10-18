@@ -15,6 +15,11 @@ struct WorkspacePreview: View {
                     return (data, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: [:])!)
                 }))
             }
+        } else if ProcessInfo.processInfo.arguments.contains("--ui-github") {
+            NavigationStack {
+                MCPServerEditor(connections: store.mcpConnections, existing: nil,
+                                prefill: MCPServer(name: "GitHub", endpoint: "https://api.githubcopilot.com/mcp/", enabled: true))
+            }
         } else if ProcessInfo.processInfo.arguments.contains("--ui-tools") {
             ToolsSettingsView(store: store)
         } else if ProcessInfo.processInfo.arguments.contains("--ui-approval") {

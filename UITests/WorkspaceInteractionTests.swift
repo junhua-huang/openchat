@@ -158,4 +158,16 @@ final class WorkspaceInteractionTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["服务详情"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["添加连接"].waitForExistence(timeout: 5))
     }
+    @MainActor func testGitHubMCPExplainsRequiredTokenBeforeNetwork() {
+        let app = launch(extra: ["--ui-github"], workspace: false)
+        let token = app.secureTextFields["mcp.token"]
+        XCTAssertTrue(token.waitForExistence(timeout: 15))
+        XCTAssertTrue(token.label.contains("必填") || token.placeholderValue?.contains("必填") == true)
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "mcp.github-token-help").firstMatch.exists)
+        app.buttons["连接、获取工具并保存"].tap()
+        let problem = app.staticTexts["mcp.connection-error"]
+        XCTAssertTrue(problem.waitForExistence(timeout: 5))
+        XCTAssertTrue(problem.label.contains("GitHub MCP 需要访问令牌"))
+        let capture = XCTAttachment(screenshot: app.screenshot()); capture.name = "github-mcp-needs-token"; capture.lifetime = .keepAlways; add(capture)
+    }
 }

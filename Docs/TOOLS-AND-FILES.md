@@ -56,7 +56,7 @@ App 被强制关闭或系统回收后无法保证自动续传；本机保留已�
 
 在“工具与 MCP → 发现 MCP”可浏览 DeepWiki、Microsoft Learn、Context7，搜索官方 MCP Registry 的服务名称并分页浏览。中文用途按钮会映射到常用英文关键词。详情页会说明兼容性和授权要求；选“添加连接”预填端点，确认后获取工具目录。推荐及目录收录均不等于安全认证。需要电脑运行、本地 stdio、自定义必需请求头或专属地址的条目会标明限制。
 
-也可以在“工具与 MCP → 添加 MCP 服务器”填写名称、HTTPS MCP 端点，选择公开访问 / Token 或 OAuth 登录。启用并保存时完成 `initialize`、`notifications/initialized` 和分页 `tools/list`；停用可以直接保存，不要求服务在线。
+也可以在“工具与 MCP → 添加 MCP 服务器”粘贴服务地址后点底部“连接”，名称自动从地址生成。推荐服务直接预填。普通流程自动判断是否需要登录；自定义名称、地址、强制授权方式及 Client ID 位于“高级设置”。GitHub 当前使用访问令牌，配置页直接提供输入框和官方创建入口。支持自动注册的 OAuth 服务无需填写 Client ID。
 
 OAuth 支持 `WWW-Authenticate` / RFC 9728 资源发现、RFC 8414 与 OIDC 元数据、PKCE S256、授权码交换、resource 绑定与轮换刷新令牌。支持公开客户端的动态注册或预先注册 Client ID；回调地址为 `http://127.0.0.1:51219/auth/callback`。需要在服务提供方登记此回调。授权服务器未声明 PKCE S256、要求 Client Secret 或元数据与资源不匹配时会解释原因并停止。暂未托管 Client ID Metadata Document，也未实现保密客户端代理后端。
 

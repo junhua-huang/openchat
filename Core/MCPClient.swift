@@ -2,6 +2,11 @@ import Foundation
 import Combine
 import Security
 
+struct MCPAuthorizationRequired: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
+}
+
 struct MCPTool: Codable, Identifiable, Equatable {
     var name: String
     var description: String?
@@ -155,6 +160,7 @@ struct MCPServer: Codable, Identifiable, Equatable {
         default: detail = "MCP 请求被服务端拒绝，请检查端点或访问设置。"
         }
         // Do not surface response bodies, authorization headers or challenge URLs.
+        if status == 401 { throw MCPAuthorizationRequired(message: detail + "（HTTP \(status)）") }
         throw AppFailure.message(detail + "（HTTP \(status)）")
     }
     private func rpc(_ method: String, _ params: [String: Any]) async throws -> [String: Any] {
@@ -162,6 +168,7 @@ struct MCPServer: Codable, Identifiable, Equatable {
             if let authorize = authorize { server = try await authorize(server) }
             else { server = try await MCPOAuthClient(session: session).refreshed(server) }
         }
+        try Task.checkCancellation()
         let id = UUID().uuidString; let request = try request(method: method, params: params, id: id)
         let (bytes, response) = try await session.bytes(for: request)
         defer { bytes.task.cancel() }
@@ -188,7 +195,7 @@ struct MCPServer: Codable, Identifiable, Equatable {
     func connect() async throws {
         if initialized { return }
         let result = try await rpc("initialize", ["protocolVersion": version, "capabilities": [:],
-            "clientInfo": ["name": "OpenChat iOS", "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.2.0"]])
+            "clientInfo": ["name": "OpenChat iOS", "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.2.1"]])
         guard let negotiated = result["protocolVersion"] as? String,
               ["2025-03-26", "2025-06-18", "2025-11-25"].contains(negotiated) else {
             throw AppFailure.message("MCP 服务协商的协议版本暂不支持。")

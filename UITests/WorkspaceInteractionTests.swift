@@ -154,6 +154,8 @@ final class WorkspaceInteractionTests: XCTestCase {
         let deepwiki = app.descendants(matching: .any).matching(identifier: "mcp.listing.recommended-deepwiki").firstMatch
         XCTAssertTrue(deepwiki.waitForExistence(timeout: 5)); deepwiki.tap()
         app.buttons["添加连接"].tap()
+        XCTAssertTrue(app.buttons["mcp.connect"].waitForExistence(timeout: 5))
+        app.buttons["mcp.advanced"].tap()
         let endpoint = app.textFields["mcp.endpoint"]
         XCTAssertTrue(endpoint.waitForExistence(timeout: 5)); XCTAssertEqual(endpoint.value as? String, "https://mcp.deepwiki.com/mcp")
         XCTAssertEqual(app.textFields["mcp.name"].value as? String, "DeepWiki")
@@ -167,21 +169,36 @@ final class WorkspaceInteractionTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["服务详情"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["添加连接"].waitForExistence(timeout: 5))
     }
-    @MainActor func testGitHubMCPOffersOAuthConfigurationAndTokenAlternative() {
+    @MainActor func testGitHubMCPShowsCompactUsableConnectionWithoutDeveloperFields() {
         let app = launch(extra: ["--ui-github"], workspace: false)
-        XCTAssertTrue(app.textFields["mcp.oauth-client-id"].waitForExistence(timeout: 15))
-        XCTAssertTrue(app.buttons["登录并连接"].exists)
-        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "mcp.oauth-callback").firstMatch.exists)
-        app.buttons["mcp.auth-method"].tap()
-        app.buttons["公开访问 / Token"].tap()
         let token = app.secureTextFields["mcp.token"]
         XCTAssertTrue(token.waitForExistence(timeout: 15))
-        XCTAssertTrue(token.label.contains("必填") || token.placeholderValue?.contains("必填") == true)
+        XCTAssertFalse(app.textFields["mcp.oauth-client-id"].exists)
+        XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "mcp.oauth-callback").firstMatch.exists)
+        XCTAssertFalse(app.textFields["mcp.endpoint"].exists)
+        let connect = app.buttons["mcp.connect"]
+        XCTAssertTrue(connect.exists); XCTAssertFalse(connect.isEnabled)
+        XCTAssertGreaterThanOrEqual(connect.frame.height, 44)
+        XCTAssertLessThan(connect.frame.maxY, app.frame.maxY)
         XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "mcp.github-token-help").firstMatch.exists)
-        app.buttons["连接、获取工具并保存"].tap()
-        let problem = app.staticTexts["mcp.connection-error"]
-        XCTAssertTrue(problem.waitForExistence(timeout: 5))
-        XCTAssertTrue(problem.label.contains("GitHub MCP 需要访问令牌"))
-        let capture = XCTAttachment(screenshot: app.screenshot()); capture.name = "github-mcp-needs-token"; capture.lifetime = .keepAlways; add(capture)
+        token.tap(); token.typeText("synthetic-token")
+        XCTAssertTrue(connect.isEnabled); XCTAssertTrue(connect.isHittable)
+        XCTAssertLessThanOrEqual(connect.frame.maxY, app.keyboards.firstMatch.frame.minY)
+        let capture = XCTAttachment(screenshot: app.screenshot()); capture.name = "github-compact-connection"; capture.lifetime = .keepAlways; add(capture)
+        // No real GitHub request, browser login, clipboard read or paid model call.
+    }
+    @MainActor func testMCPAdvancedOAuthOptionsRemainOptionalAndConnectionActionStaysVisible() {
+        let app = launch(extra: ["--ui-github"], workspace: false)
+        let advanced = app.buttons["mcp.advanced"]
+        XCTAssertTrue(advanced.waitForExistence(timeout: 15)); advanced.tap()
+        let endpoint = app.textFields["mcp.endpoint"]
+        XCTAssertTrue(endpoint.waitForExistence(timeout: 5))
+        XCTAssertEqual(endpoint.value as? String, "https://api.githubcopilot.com/mcp/")
+        app.buttons["mcp.auth-method"].tap(); app.buttons["OAuth 登录"].tap()
+        XCTAssertTrue(app.textFields["mcp.oauth-client-id"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "mcp.oauth-callback").firstMatch.exists)
+        advanced.tap()
+        XCTAssertFalse(app.textFields["mcp.oauth-client-id"].exists)
+        XCTAssertTrue(app.buttons["mcp.connect"].isHittable)
     }
 }

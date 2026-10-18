@@ -1,5 +1,10 @@
 import Foundation
 
+struct MCPOAuthSetupRequired: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
+}
+
 /// Credentials belong to one MCP resource, never to the ChatGPT account.
 struct MCPOAuthCredentials: Codable, Equatable {
     var resource: String
@@ -73,7 +78,7 @@ struct MCPOAuthAttempt {
         var probe = URLRequest(url: resourceURL); probe.httpMethod = "POST"; probe.timeoutInterval = 20
         probe.setValue("application/json", forHTTPHeaderField: "Content-Type")
         probe.setValue("application/json, text/event-stream", forHTTPHeaderField: "Accept")
-        probe.httpBody = try JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "id": "oauth-discovery", "method": "initialize", "params": ["protocolVersion": "2025-06-18", "capabilities": [:], "clientInfo": ["name": "OpenChat OAuth discovery", "version": "2.2.0"]]])
+        probe.httpBody = try JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "id": "oauth-discovery", "method": "initialize", "params": ["protocolVersion": "2025-06-18", "capabilities": [:], "clientInfo": ["name": "OpenChat OAuth discovery", "version": "2.2.1"]]])
         // An unauthenticated initialize has no tool side effects. Never send a saved token during discovery.
         let (_, response) = try await BoundedHTTP.read(probe, limit: 256_000, using: session, acceptedStatus: 200..<500)
         let challenge = response.value(forHTTPHeaderField: "WWW-Authenticate")
@@ -96,7 +101,7 @@ struct MCPOAuthAttempt {
         guard let metadata = resourceMetadata, let resource = metadata["resource"] as? String,
               Self.matchesResource(try BoundedHTTP.endpoint(resource), endpoint: resourceURL),
               let issuers = metadata["authorization_servers"] as? [String], !issuers.isEmpty else {
-            throw AppFailure.message("此端点没有提供有效的 MCP OAuth 资源元数据，请检查地址或改用 Token。")
+            throw MCPOAuthSetupRequired(message: "此端点没有提供有效的 MCP OAuth 资源元数据，请检查地址或改用 Token。")
         }
         let issuerURL = try BoundedHTTP.endpoint(issuers[0])
         var authority: [String: Any]?
@@ -109,10 +114,10 @@ struct MCPOAuthAttempt {
               let authorization = authority["authorization_endpoint"] as? String,
               let token = authority["token_endpoint"] as? String else { throw AppFailure.message("OAuth 授权服务器发现失败或发行者不匹配。") }
         guard (authority["code_challenge_methods_supported"] as? [String])?.contains("S256") == true else {
-            throw AppFailure.message("此 OAuth 服务未声明 PKCE S256 支持，无法安全地在 iPhone 上登录。请使用 Token 或让服务支持 PKCE。")
+            throw MCPOAuthSetupRequired(message: "此 OAuth 服务未声明 PKCE S256 支持，无法安全地在 iPhone 上登录。请使用 Token 或让服务支持 PKCE。")
         }
         if let methods = authority["token_endpoint_auth_methods_supported"] as? [String], !methods.contains("none") {
-            throw AppFailure.message("此服务要求保密客户端，不能把 Client Secret 内置到 iOS App。请使用可信后端完成授权，或使用 Token。")
+            throw MCPOAuthSetupRequired(message: "此服务要求保密客户端，不能把 Client Secret 内置到 iOS App。请使用可信后端完成授权，或使用 Token。")
         }
         return MCPOAuthDiscovery(resource: Self.canonical(try BoundedHTTP.endpoint(resource)), boundEndpoint: Self.canonical(resourceURL), issuer: issuer,
             authorizationEndpoint: try BoundedHTTP.endpoint(authorization), tokenEndpoint: try BoundedHTTP.endpoint(token),
@@ -123,7 +128,7 @@ struct MCPOAuthAttempt {
         var clientID = supplied.trimmingCharacters(in: .whitespacesAndNewlines)
         if clientID.isEmpty {
             guard let registration = discovery.registrationEndpoint else {
-                throw AppFailure.message("此服务不支持动态注册。请先在服务提供方注册公开 OAuth 客户端，填写 Client ID，并登记下方回调地址；需要 Client Secret 的服务须通过可信后端接入。")
+                throw MCPOAuthSetupRequired(message: "此服务不支持动态注册。请先在服务提供方注册公开 OAuth 客户端，填写 Client ID，并登记下方回调地址；需要 Client Secret 的服务须通过可信后端接入。")
             }
             var request = URLRequest(url: registration); request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")

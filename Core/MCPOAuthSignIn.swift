@@ -9,12 +9,12 @@ import Combine
     private var continuation: CheckedContinuation<String, Error>?
     private var timeout: Task<Void, Never>?
     func login(endpoint: String, clientID: String) async throws -> MCPOAuthCredentials {
+        defer { callback.stop(); timeout?.cancel(); browser = nil; stage = "" }
         let client = MCPOAuthClient()
         stage = "正在发现授权服务器"
         let discovery = try await client.discover(endpoint: endpoint)
         try Task.checkCancellation()
         let redirect = try await callback.start(port: 51219)
-        defer { callback.stop(); timeout?.cancel(); browser = nil; stage = "" }
         try Task.checkCancellation()
         let attempt = try await client.prepare(discovery, clientID: clientID, redirect: redirect)
         try Task.checkCancellation()

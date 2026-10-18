@@ -87,7 +87,7 @@ private final class OAuthMockProtocol: URLProtocol {
         let session = session(); defer { session.invalidateAndCancel(); OAuthMockProtocol.handler = nil }
         OAuthMockProtocol.handler = { request in
             switch request.url!.path {
-            case "/mcp/": return (401, ["WWW-Authenticate": "Bearer resource_metadata=\"https://mcp.example.com/metadata\""], [:])
+            case "/mcp", "/mcp/": return (401, ["WWW-Authenticate": "Bearer resource_metadata=\"https://mcp.example.com/metadata\""], [:])
             case "/metadata": return (200, [:], ["resource": self.resource, "authorization_servers": [self.issuer]])
             default: return (200, [:], ["issuer": self.issuer, "authorization_endpoint": self.issuer + "/authorize", "token_endpoint": self.issuer + "/token", "code_challenge_methods_supported": ["S256"], "token_endpoint_auth_methods_supported": ["none"]])
             }

@@ -83,7 +83,17 @@ final class WorkspaceInteractionTests: XCTestCase {
             expectation(for: visible, evaluatedWith: nil); waitForExpectations(timeout: 5)
             let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "stream-after-send-\(index)"; shot.lifetime = .keepAlways; add(shot)
         }
-        app.scrollViews["chat.conversation"].swipeUp()
+        let chat = app.scrollViews["chat.conversation"]
+        let top = app.buttons["chat.history"].frame.maxY + 20
+        let bottom = composer.frame.minY - 20
+        XCTAssertGreaterThan(bottom - top, 60)
+        print("Streaming chat bounds: \(chat.frame); visible drag: \(top)...\(bottom); keyboard: \(app.keyboards.firstMatch.frame)")
+        // A long lazy scroll view's accessibility frame can include offscreen
+        // content. Drag only inside the screen area above the real keyboard.
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        let start = origin.withOffset(CGVector(dx: app.frame.width / 2, dy: bottom - app.frame.minY))
+        let end = origin.withOffset(CGVector(dx: app.frame.width / 2, dy: top - app.frame.minY))
+        start.press(forDuration: 0.05, thenDragTo: end)
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
     }
     @MainActor func testToolRecordsRemainAccessibleBelowAnswer() {

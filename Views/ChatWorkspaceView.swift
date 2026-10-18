@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import PhotosUI
+import UIKit
 
 private enum WorkspaceSheet: Identifiable {
     case history, models, settings, tools, edit(ChatMessage), approval(ToolApproval)
@@ -201,13 +202,14 @@ struct ChatWorkspaceView: View {
                 .id("\(store.selectedID?.uuidString ?? "none")-\(store.selected?.messages.isEmpty != false)")
                 .accessibilityIdentifier("chat.conversation")
                 .coordinateSpace(name: "chat-scroll")
+                .contentShape(Rectangle())
                 .scrollDismissesKeyboard(.immediately)
                 .task { requestScroll(proxy) }
-                .simultaneousGesture(TapGesture().onEnded { inputFocused = false }, including: inputFocused ? .all : .none)
+                .simultaneousGesture(TapGesture().onEnded { dismissKeyboard() }, including: inputFocused ? .all : .none)
                 .simultaneousGesture(DragGesture().updating($isDragging) { _, dragging, _ in dragging = true }.onChanged { value in
-                    inputFocused = false
+                    if inputFocused { dismissKeyboard() }
                     if value.translation.height > 12 { followOutput = false }
-                }.onEnded { _ in if isNearBottom { followOutput = true } })
+                }.onEnded { _ in dismissKeyboard(); if isNearBottom { followOutput = true } })
                 .onPreferenceChange(ChatBottomKey.self) { bottom in
                     isNearBottom = bottom <= viewport.size.height + 65
                     if isNearBottom && !isDragging { followOutput = true }
@@ -257,6 +259,13 @@ struct ChatWorkspaceView: View {
             }
             scrollTask = nil
         }
+    }
+
+    private func dismissKeyboard() {
+        inputFocused = false
+        // Also resign the UIKit responder: at a scroll boundary, native text
+        // selection/keyboard handling can outlive SwiftUI's focus update.
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 
     private var emptyState: some View {

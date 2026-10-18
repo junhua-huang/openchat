@@ -104,6 +104,25 @@ final class ChatStoreTests: XCTestCase {
         XCTAssertEqual(restored.threads.first(where: { $0.id == a })?.isPinned, true)
     }
 
+    @MainActor func testRepeatedNewConversationKeepsDraftAndDoesNotReplaceBackgroundReply() async throws {
+        let control = ControlledChat(); let stream = control.channel()
+        let directory = directory(); let store = await fixture(control, directory: directory)
+        defer { store.stopAll(); try? FileManager.default.removeItem(at: directory) }
+        XCTAssertTrue(store.send("继续保留的对话")); let previous = try XCTUnwrap(store.selected)
+        try await waitFor { control.histories.count == 1 }
+        store.updateDraft("旧对话未发送草稿")
+        store.newThread(); let blank = try XCTUnwrap(store.selectedID)
+        store.newThread(); store.newThread()
+        XCTAssertEqual(store.selectedID, blank); XCTAssertEqual(store.threads.count, 2)
+        XCTAssertTrue(store.selected?.messages.isEmpty == true); XCTAssertTrue((store.selected?.draft ?? "").isEmpty)
+        stream.yield("原对话的回复"); stream.finish()
+        try await waitFor { store.generatingThreadIDs.isEmpty }
+        XCTAssertTrue(store.selected?.messages.isEmpty == true)
+        store.select(previous)
+        XCTAssertEqual(store.selected?.messages.last?.text, "原对话的回复")
+        XCTAssertEqual(store.selected?.draft, "旧对话未发送草稿")
+    }
+
     @MainActor func testEffortIsCapturedForEachRequestAndCannotChangeDuringGeneration() async throws {
         let control = ControlledChat(); let first = control.channel(); let second = control.channel()
         let directory = directory()

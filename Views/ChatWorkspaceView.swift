@@ -36,6 +36,9 @@ struct ChatWorkspaceView: View {
     @ScaledMetric(relativeTo: .title2) private var titleSize: CGFloat = 28
     @StateObject private var store: ChatStore
     @State private var sheet: WorkspaceSheet?
+    @State private var pendingNewConversation = false
+    @State private var conversationResetID = UUID()
+    @State private var newConversationFocusID: UUID?
     @State private var pendingConnection: ConnectIntent?
     @State private var followOutput = true
     @State private var isNearBottom = true
@@ -79,7 +82,7 @@ struct ChatWorkspaceView: View {
             topControls.background(chromeMeasurement("header"))
         }
         .overlay(alignment: .bottom) {
-            composer.background(chromeMeasurement("composer"))
+            composer.id(store.selectedID).background(chromeMeasurement("composer"))
         }
         .onPreferenceChange(ChatChromeHeightKey.self) { heights in
             if let height = heights["header"], height.isFinite, height > 0, abs(headerHeight - height) > 0.5 { headerHeight = height }
@@ -87,7 +90,10 @@ struct ChatWorkspaceView: View {
         }
         .chatScrollEdgesHidden()
         .sheet(item: $sheet, onDismiss: {
-            if let intent = pendingConnection {
+            if pendingNewConversation {
+                pendingNewConversation = false
+                startNewConversation()
+            } else if let intent = pendingConnection {
                 pendingConnection = nil
                 // A completed connection will select ChatGPT as the active service.
                 Task { await auth.connect(accountID: intent.accountID) }
@@ -97,7 +103,7 @@ struct ChatWorkspaceView: View {
             case .history:
                 HistoryView(store: store, onSelect: { thread in
                     store.select(thread); followOutput = true; sheet = nil
-                }, onNew: { store.newThread(); followOutput = true; sheet = nil })
+                }, onNew: { pendingNewConversation = true; sheet = nil })
             case .models:
                 ModelPickerView(store: store) { slug in store.selectModel(slug); TouchFeedback.tap() }
             case .settings:
@@ -141,6 +147,13 @@ struct ChatWorkspaceView: View {
             if id == nil, case .approval = sheet { sheet = nil }
         }
         .task { await store.loadModels() }
+        .task(id: newConversationFocusID) {
+            guard let request = newConversationFocusID else { return }
+            // Let the new composer mount before asking it to become first responder.
+            await Task.yield()
+            guard !Task.isCancelled, newConversationFocusID == request, sheet == nil else { return }
+            inputFocused = true
+        }
         .onChange(of: auth.activeID) { _, id in
             if id != nil, store.isAPIConnection {
                 do { try apiConnections.select(nil) } catch { store.errorText = error.localizedDescription }
@@ -190,9 +203,9 @@ struct ChatWorkspaceView: View {
                         .foregroundStyle(.primary).liquidSurface(radius: 24, interactive: true)
                 }.disabled(store.isSending).accessibilityLabel("选择模型与推理强度，当前为 \(modelName)，\(store.selectedEffort.title)").layoutPriority(1)
                 Spacer(minLength: 0)
-                Button { store.newThread(); followOutput = true; inputFocused = true; TouchFeedback.tap() } label: {
-                    LiquidIcon(name: "square.and.pencil")
-                }.disabled(!store.storageReady).accessibilityLabel("新建对话")
+                Button(action: startNewConversation) {
+                    LiquidIcon(name: "square.and.pencil").contentShape(Rectangle())
+                }.disabled(!store.storageReady).accessibilityLabel("新建对话").accessibilityIdentifier("chat.new")
                 Menu {
                     Button("账户与设置", systemImage: "person.crop.circle") { inputFocused = false; sheet = .settings }
                     Button("工具与 MCP", systemImage: "wrench.and.screwdriver") { inputFocused = false; sheet = .tools }
@@ -229,7 +242,7 @@ struct ChatWorkspaceView: View {
                 }
                 // The tall welcome view must not donate its cached scroll offset
                 // to the much shorter first exchange. History switches also reset it.
-                .id("\(store.selectedID?.uuidString ?? "none")-\(store.selected?.messages.isEmpty != false)")
+                .id("\(store.selectedID?.uuidString ?? "none")-\(store.selected?.messages.isEmpty != false)-\(conversationResetID)")
                 .accessibilityIdentifier("chat.conversation")
                 .coordinateSpace(name: "chat-scroll")
                 .contentShape(Rectangle())
@@ -298,6 +311,19 @@ struct ChatWorkspaceView: View {
         // Also resign the UIKit responder: at a scroll boundary, native text
         // selection/keyboard handling can outlive SwiftUI's focus update.
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+
+    private func startNewConversation() {
+        guard store.storageReady else { return }
+        scrollTask?.cancel(); scrollTask = nil
+        inputFocused = false
+        store.newThread()
+        followOutput = true; isNearBottom = true
+        // Reusing an existing blank thread must still reset a previously
+        // scrolled welcome page and acknowledge repeated new-chat taps.
+        conversationResetID = UUID()
+        newConversationFocusID = UUID()
+        TouchFeedback.tap()
     }
 
     private var emptyState: some View {

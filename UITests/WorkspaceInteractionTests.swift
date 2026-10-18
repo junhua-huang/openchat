@@ -45,6 +45,41 @@ final class WorkspaceInteractionTests: XCTestCase {
         send.tap()
         XCTAssertTrue(app.staticTexts["这是本地界面预览。"].waitForExistence(timeout: 5))
     }
+    @MainActor func testNewConversationRespondsFromHeaderAndHistoryWithKeyboard() {
+        let app = launch()
+        let composer = app.descendants(matching: .any).matching(identifier: "chat.composer").firstMatch
+        composer.tap(); XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        let create = app.buttons["chat.new"]
+        XCTAssertTrue(create.isHittable)
+        create.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)).tap()
+        XCTAssertTrue(app.staticTexts["有什么可以帮你？"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["发送消息"].isEnabled)
+        composer.tap(); composer.typeText("keep this draft")
+        openHistory(app)
+        let historyNew = app.buttons["history.new"]
+        XCTAssertTrue(historyNew.isHittable)
+        historyNew.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.5)).tap()
+        XCTAssertTrue(app.navigationBars["你的对话"].waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["有什么可以帮你？"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["发送消息"].isEnabled)
+        composer.tap(); composer.typeText("new question")
+        XCTAssertTrue(app.buttons["发送消息"].isEnabled); app.buttons["发送消息"].tap()
+        XCTAssertTrue(app.staticTexts["这是本地界面预览。"].waitForExistence(timeout: 5))
+    }
+    @MainActor func testNewConversationResetsScrolledBlankWelcomeWhenReused() {
+        let app = launch(extra: ["--ui-empty"])
+        for _ in 0..<2 {
+            app.scrollViews["chat.conversation"].swipeUp()
+            let create = app.buttons["chat.new"]
+            create.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            let welcome = app.staticTexts["有什么可以帮你？"]
+            XCTAssertTrue(welcome.waitForExistence(timeout: 5)); XCTAssertTrue(welcome.isHittable)
+            XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+            XCTAssertGreaterThan(welcome.frame.minY, create.frame.maxY)
+            XCTAssertLessThan(welcome.frame.maxY, app.keyboards.firstMatch.frame.minY)
+        }
+    }
     @MainActor func testReplySurvivesHomeAndForeground() async throws {
         let app = launch(extra: ["--ui-background"])
         let send = app.buttons["发送消息"]
@@ -168,6 +203,22 @@ final class WorkspaceInteractionTests: XCTestCase {
         app.staticTexts["测试文档服务"].tap()
         XCTAssertTrue(app.navigationBars["服务详情"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["添加连接"].waitForExistence(timeout: 5))
+    }
+    @MainActor func testMCPVendorSearchFindsChineseNamesAndExplainsSetupRequirements() {
+        let app = launch(extra: ["--ui-mcp"], workspace: false)
+        let search = app.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 15)); search.tap(); search.typeText("微软")
+        let microsoft = app.descendants(matching: .any).matching(identifier: "mcp.listing.recommended-microsoft").firstMatch
+        XCTAssertTrue(microsoft.waitForExistence(timeout: 5)); microsoft.tap()
+        XCTAssertTrue(app.staticTexts["https://learn.microsoft.com/api/mcp"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["添加连接"].exists)
+        app.navigationBars.buttons.firstMatch.tap()
+        search.tap(); search.buttons.firstMatch.tap()
+        search.typeText("Figma")
+        let figma = app.descendants(matching: .any).matching(identifier: "mcp.listing.vendor-figma").firstMatch
+        XCTAssertTrue(figma.waitForExistence(timeout: 5)); figma.tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "OpenChat 尚未获准")).firstMatch.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["添加连接"].exists)
     }
     @MainActor func testGitHubMCPShowsCompactUsableConnectionWithoutDeveloperFields() {
         let app = launch(extra: ["--ui-github"], workspace: false)

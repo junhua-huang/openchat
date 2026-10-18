@@ -68,8 +68,9 @@ struct HistoryView: View {
                 Button { TouchFeedback.tap(); onNew() } label: {
                     Label("开启新对话", systemImage: "square.and.pencil").font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity).padding(18).liquidSurface(radius: 28, interactive: true)
+                        .contentShape(Rectangle())
                 }.buttonStyle(.plain).padding(.horizontal, 24).padding(.bottom, 12)
-                    .disabled(!store.storageReady)
+                    .disabled(!store.storageReady).accessibilityIdentifier("history.new")
             }
             .alert("重命名对话", isPresented: Binding(get: { renameID != nil }, set: { if !$0 { renameID = nil } })) {
                 TextField("对话标题", text: $renameTitle)

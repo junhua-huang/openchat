@@ -78,7 +78,7 @@ struct MCPOAuthAttempt {
         var probe = URLRequest(url: resourceURL); probe.httpMethod = "POST"; probe.timeoutInterval = 20
         probe.setValue("application/json", forHTTPHeaderField: "Content-Type")
         probe.setValue("application/json, text/event-stream", forHTTPHeaderField: "Accept")
-        probe.httpBody = try JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "id": "oauth-discovery", "method": "initialize", "params": ["protocolVersion": "2025-06-18", "capabilities": [:], "clientInfo": ["name": "OpenChat OAuth discovery", "version": "2.2.1"]]])
+        probe.httpBody = try JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "id": "oauth-discovery", "method": "initialize", "params": ["protocolVersion": "2025-06-18", "capabilities": [:], "clientInfo": ["name": "OpenChat OAuth discovery", "version": "2.2.2"]]])
         // An unauthenticated initialize has no tool side effects. Never send a saved token during discovery.
         let (_, response) = try await BoundedHTTP.read(probe, limit: 256_000, using: session, acceptedStatus: 200..<500)
         let challenge = response.value(forHTTPHeaderField: "WWW-Authenticate")

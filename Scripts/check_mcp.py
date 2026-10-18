@@ -47,7 +47,7 @@ main = '''
     }
 }
 '''
-sources = ["Core/Support.swift", "Core/MCPOAuth.swift", "Core/BoundedHTTP.swift", "Core/WebSearchClient.swift", "Core/ToolModels.swift", "Core/MCPClient.swift", "Core/MCPRegistry.swift"]
+sources = ["Core/Support.swift", "Core/MCPOAuth.swift", "Core/BoundedHTTP.swift", "Core/WebSearchClient.swift", "Core/ToolModels.swift", "Core/MCPClient.swift", "Core/MCPRegistry.swift", "Core/MCPVendorCatalog.swift"]
 source = "\n".join((root / path).read_text() for path in sources) + wire + main
 with tempfile.TemporaryDirectory(prefix="openchat-mcp-") as folder:
     file = Path(folder, "MCPProbe.swift"); file.write_text(source)

@@ -8,6 +8,9 @@ struct MCPListing: Identifiable, Equatable {
     let website: String?
     let authorization: String
     var limitation: String? = nil
+    var publisher: String? = nil
+    var keywords: [String] = []
+    var requiresCustomEndpoint = false
     var canConnect: Bool { endpoint != nil && limitation == nil }
     var server: MCPServer? {
         guard canConnect, let endpoint = endpoint else { return nil }
@@ -25,16 +28,24 @@ struct MCPRegistryClient {
     var transport: Transport? = nil
     static let recommendations: [MCPListing] = [
         MCPListing(id: "recommended-deepwiki", title: "DeepWiki", summary: "查询公开 GitHub 仓库的文档，理解代码与项目结构。",
-            endpoint: "https://mcp.deepwiki.com/mcp", website: "https://docs.devin.ai/work-with-devin/deepwiki-mcp", authorization: "公开仓库 · 无需密钥"),
+            endpoint: "https://mcp.deepwiki.com/mcp", website: "https://docs.devin.ai/work-with-devin/deepwiki-mcp", authorization: "公开仓库 · 无需密钥", publisher: "Cognition", keywords: ["代码仓库", "github", "文档", "docs", "代码"]),
         MCPListing(id: "recommended-microsoft", title: "Microsoft Learn", summary: "搜索微软官方技术文档和代码示例。",
-            endpoint: "https://learn.microsoft.com/api/mcp", website: "https://learn.microsoft.com/en-us/training/support/mcp", authorization: "公开文档 · 无需密钥"),
+            endpoint: "https://learn.microsoft.com/api/mcp", website: "https://learn.microsoft.com/en-us/training/support/mcp", authorization: "公开文档 · 无需密钥", publisher: "Microsoft", keywords: ["微软", "微软文档", "azure", "docs", "文档", "开发文档"]),
         MCPListing(id: "recommended-context7", title: "Context7", summary: "查找开发库的最新文档和用法，适合编程问题。",
-            endpoint: "https://mcp.context7.com/mcp", website: "https://context7.com/docs", authorization: "支持 Bearer API Key · 配额由服务商决定")
+            endpoint: "https://mcp.context7.com/mcp", website: "https://context7.com/docs", authorization: "支持 Bearer API Key · 配额由服务商决定", publisher: "Upstash", keywords: ["docs", "文档", "开发文档", "代码", "编程"])
     ]
     static func searchTerm(_ query: String) -> String {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        return ["搜索": "search", "联网搜索": "search", "文档": "docs", "开发文档": "docs", "代码仓库": "github",
+        return MCPVendorCatalog.registryAliases[MCPVendorCatalog.normalize(query)] ?? ["搜索": "search", "联网搜索": "search", "文档": "docs", "开发文档": "docs", "代码仓库": "github",
                 "网页": "fetch", "数据库": "database", "天气": "weather", "新闻": "news", "地图": "maps", "知识库": "knowledge"][query] ?? query
+    }
+    static func distinct(_ entries: [MCPListing], excluding others: [MCPListing] = []) -> [MCPListing] {
+        func key(_ listing: MCPListing) -> String {
+            // Only a trailing slash is an alias; paths retain their case.
+            listing.endpoint.map { "url:" + $0.trimmingCharacters(in: CharacterSet(charactersIn: "/")) } ?? "id:" + listing.id
+        }
+        var seen = Set(others.map(key))
+        return entries.filter { seen.insert(key($0)).inserted }
     }
     func search(_ query: String, cursor: String? = nil) async throws -> MCPRegistryPage {
         let term = Self.searchTerm(query)

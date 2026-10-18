@@ -32,7 +32,7 @@ struct ChatWorkspaceView: View {
     @State private var pendingConnection: ConnectIntent?
     @State private var followOutput = true
     @State private var isNearBottom = true
-    @State private var isDragging = false
+    @GestureState private var isDragging = false
     @State private var scrollTask: Task<Void, Never>?
     @State private var importing = false
     @State private var showingPhotos = false
@@ -204,13 +204,14 @@ struct ChatWorkspaceView: View {
                 .scrollDismissesKeyboard(.immediately)
                 .task { requestScroll(proxy) }
                 .simultaneousGesture(TapGesture().onEnded { inputFocused = false }, including: inputFocused ? .all : .none)
-                .simultaneousGesture(DragGesture().onChanged { value in
-                    isDragging = true; inputFocused = false
+                .simultaneousGesture(DragGesture().updating($isDragging) { _, dragging, _ in dragging = true }.onChanged { value in
+                    inputFocused = false
                     if value.translation.height > 12 { followOutput = false }
-                }.onEnded { _ in isDragging = false; if isNearBottom { followOutput = true } })
+                }.onEnded { _ in if isNearBottom { followOutput = true } })
                 .onPreferenceChange(ChatBottomKey.self) { bottom in
                     isNearBottom = bottom <= viewport.size.height + 65
                     if isNearBottom && !isDragging { followOutput = true }
+                    requestScroll(proxy)
                 }
                 .onChange(of: store.selected?.messages.last?.text) { _, _ in
                     requestScroll(proxy)
@@ -224,6 +225,7 @@ struct ChatWorkspaceView: View {
                 .onChange(of: store.selected?.messages.last?.attachments) { _, _ in
                     requestScroll(proxy)
                 }
+                .onChange(of: store.selected?.messages.last?.status) { _, _ in requestScroll(proxy) }
                 .onChange(of: store.selectedID) { _, _ in
                     followOutput = true
                     scrollTask?.cancel(); scrollTask = nil; requestScroll(proxy)

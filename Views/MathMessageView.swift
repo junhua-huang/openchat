@@ -38,7 +38,11 @@ import SwiftMath
         let format = UIGraphicsImageRendererFormat()
         format.scale = scale; format.opaque = false
         let image = UIGraphicsImageRenderer(size: bounds, format: format).image { context in
-            label.layer.render(in: context.cgContext)
+            // Math display lists use a bottom-left origin. Render them directly:
+            // snapshotting the UILabel's flipped CALayer inverts the glyphs.
+            context.cgContext.translateBy(x: 0, y: bounds.height)
+            context.cgContext.scaleBy(x: 1, y: -1)
+            label.displayList?.draw(context.cgContext)
         }.withRenderingMode(.alwaysTemplate)
         let descent = label.displayList?.descent ?? 0
         let ascent = label.displayList?.ascent ?? 0

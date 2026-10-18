@@ -1,8 +1,37 @@
 import XCTest
 import UIKit
+import SwiftMath
 @testable import LiaoChat
 
 final class MathTests: XCTestCase {
+    @MainActor func testRasterOrientationMatchesNativeMathImage() throws {
+        let expression = MathExpression(latex: "F", display: false, source: "$F$")
+        let actual = try XCTUnwrap(MathRenderer.raster(expression, size: 24, scale: 2)?.image)
+        let reference = MTMathImage(latex: "F", fontSize: 24, textColor: .black, labelMode: .text, textAlignment: .left)
+        reference.contentInsets = UIEdgeInsets(top: 2, left: 2, bottom: 2, right: 2)
+        let expected = try XCTUnwrap(reference.asImage().1)
+        func centroid(_ image: UIImage) throws -> Double {
+            let cgImage = try XCTUnwrap(image.cgImage)
+            var pixels = [UInt8](repeating: 0, count: 64 * 64 * 4)
+            return try pixels.withUnsafeMutableBytes { bytes in
+                let context = try XCTUnwrap(CGContext(data: bytes.baseAddress, width: 64, height: 64,
+                    bitsPerComponent: 8, bytesPerRow: 256, space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+                context.draw(cgImage, in: CGRect(x: 0, y: 0, width: 64, height: 64))
+                let values = bytes.bindMemory(to: UInt8.self)
+                var weight = 0.0; var moment = 0.0
+                for y in 0..<64 {
+                    for x in 0..<64 {
+                        let alpha = Double(values[(y * 64 + x) * 4 + 3])
+                        weight += alpha; moment += alpha * Double(y)
+                    }
+                }
+                XCTAssertGreaterThan(weight, 0)
+                return moment / max(weight, 1) / 64
+            }
+        }
+        XCTAssertEqual(try centroid(actual), try centroid(expected), accuracy: 0.04)
+    }
     private func formula(_ source: String, _ latex: String, display: Bool = false) -> MathPart {
         .math(MathExpression(latex: latex, display: display, source: source))
     }

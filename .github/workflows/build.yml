@@ -72,13 +72,6 @@ jobs:
       - name: Capture native chat UI
         timeout-minutes: 8
         run: bash Scripts/capture-ui.sh
-      - name: Run UI regression tests
-        timeout-minutes: 15
-        run: |
-          xcodebuild test-without-building -project LiaoChat.xcodeproj -scheme LiaoChat -configuration Debug \
-            -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
-            -derivedDataPath build/DerivedData -resultBundlePath build/Tests.xcresult \
-            -only-testing:LiaoChatUITests -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO
       - name: Retain native UI checks
         if: always()
         uses: actions/upload-artifact@v4
@@ -87,6 +80,13 @@ jobs:
           path: build/ui/*.png
           if-no-files-found: ignore
           retention-days: 7
+      - name: Run UI regression tests
+        timeout-minutes: 15
+        run: |
+          xcodebuild test-without-building -project LiaoChat.xcodeproj -scheme LiaoChat -configuration Debug \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
+            -derivedDataPath build/DerivedData -resultBundlePath build/Tests.xcresult \
+            -only-testing:LiaoChatUITests -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO
       - name: Retain synthetic native document checks
         uses: actions/upload-artifact@v4
         with:

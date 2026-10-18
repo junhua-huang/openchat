@@ -60,17 +60,25 @@ jobs:
           if not candidates: raise SystemExit('No iPhone simulator installed')
           with open(os.environ['GITHUB_ENV'], 'a') as f: f.write('SIMULATOR_ID=' + candidates[0]['udid'] + '\n')
           PY
-      - name: Build and run tests
+      - name: Build and run unit tests
         timeout-minutes: 15
         run: |
           xcodebuild test -project LiaoChat.xcodeproj -scheme LiaoChat -configuration Debug \
             -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
-            -derivedDataPath build/DerivedData -resultBundlePath build/Tests.xcresult \
+            -derivedDataPath build/DerivedData -resultBundlePath build/UnitTests.xcresult \
+            -only-testing:LiaoChatTests \
             -parallel-testing-enabled NO \
             CODE_SIGNING_ALLOWED=NO
       - name: Capture native chat UI
         timeout-minutes: 8
         run: bash Scripts/capture-ui.sh
+      - name: Run UI regression tests
+        timeout-minutes: 15
+        run: |
+          xcodebuild test-without-building -project LiaoChat.xcodeproj -scheme LiaoChat -configuration Debug \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
+            -derivedDataPath build/DerivedData -resultBundlePath build/Tests.xcresult \
+            -only-testing:LiaoChatUITests -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO
       - name: Retain native UI checks
         if: always()
         uses: actions/upload-artifact@v4
@@ -92,6 +100,7 @@ jobs:
         with:
           name: simulator-build-and-tests
           path: |
+            build/UnitTests.xcresult
             build/Tests.xcresult
             build/DerivedData/Build/Products/Debug-iphonesimulator/LiaoChat.app
           if-no-files-found: ignore

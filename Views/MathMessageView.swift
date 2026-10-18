@@ -29,7 +29,7 @@ import SwiftMath
         label.contentInsets = UIEdgeInsets(top: 2, left: 2, bottom: 2, right: 2)
         label.latex = expression.latex
         guard label.error == nil else { return nil }
-        let natural = label.sizeThatFits(.zero)
+        let natural = label.intrinsicContentSize
         let bounds = CGSize(width: ceil(natural.width), height: ceil(natural.height))
         guard bounds.width > 0, bounds.height > 0, bounds.width.isFinite, bounds.height.isFinite,
               bounds.width * bounds.height * scale * scale <= 4_000_000 else { return nil }
@@ -76,6 +76,7 @@ struct MathText: View {
         }
         let attributed = (try? AttributedString(markdown: markdown,
             options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(markdown)
+        if expressions.isEmpty { return Text(attributed) }
         var result = Text("")
         var cursor = attributed.startIndex
         for (token, expression) in expressions {

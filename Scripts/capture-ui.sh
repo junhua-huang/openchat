@@ -11,6 +11,10 @@ for appearance in light dark; do
   xcrun simctl launch "$capture_device_id" com.example.LiaoChat --ui-preview
   sleep 4
   xcrun simctl io "$capture_device_id" screenshot "build/ui/chat-$appearance.png"
+  xcrun simctl terminate "$capture_device_id" com.example.LiaoChat || true
+  xcrun simctl launch "$capture_device_id" com.example.LiaoChat --ui-preview --ui-math
+  sleep 4
+  xcrun simctl io "$capture_device_id" screenshot "build/ui/math-$appearance.png"
   if [[ "$appearance" == dark ]]; then
     xcrun simctl terminate "$capture_device_id" com.example.LiaoChat || true
     xcrun simctl launch "$capture_device_id" com.example.LiaoChat --ui-preview --ui-tools

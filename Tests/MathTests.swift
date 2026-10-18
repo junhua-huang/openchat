@@ -71,6 +71,18 @@ final class MathTests: XCTestCase {
             XCTAssertGreaterThan(raster?.image.size.width ?? 0, 5)
             XCTAssertGreaterThan(raster?.image.size.height ?? 0, 5)
             XCTAssertGreaterThan(raster?.descent ?? 0, 0)
+            if let image = raster?.image.cgImage {
+                var pixels = [UInt8](repeating: 0, count: 32 * 32 * 4)
+                let hasInk = pixels.withUnsafeMutableBytes { bytes -> Bool in
+                    guard let context = CGContext(data: bytes.baseAddress, width: 32, height: 32,
+                        bitsPerComponent: 8, bytesPerRow: 128, space: CGColorSpaceCreateDeviceRGB(),
+                        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+                    context.draw(image, in: CGRect(x: 0, y: 0, width: 32, height: 32))
+                    let values = bytes.bindMemory(to: UInt8.self)
+                    return stride(from: 3, to: values.count, by: 4).contains { values[$0] > 0 }
+                }
+                XCTAssertTrue(hasInk, "Formula must contain visible glyphs: " + latex)
+            } else { XCTFail("Missing formula bitmap") }
             XCTAssertTrue(raster === MathRenderer.raster(expression, size: 19, scale: 2))
         }
     }

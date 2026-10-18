@@ -40,7 +40,9 @@ import SwiftMath
         let image = UIGraphicsImageRenderer(size: bounds, format: format).image { context in
             label.layer.render(in: context.cgContext)
         }.withRenderingMode(.alwaysTemplate)
-        let baseline = label.displayList?.position.y ?? 2
+        let descent = label.displayList?.descent ?? 0
+        let ascent = label.displayList?.ascent ?? 0
+        let baseline = (bounds.height - 4 - max(ascent + descent, size / 2)) / 2 + descent + 2
         let raster = Raster(image: image, descent: baseline)
         cache.setObject(raster, forKey: key, cost: Int(bounds.width * bounds.height * scale * scale * 4))
         return raster

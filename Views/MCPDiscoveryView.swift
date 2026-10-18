@@ -39,7 +39,7 @@ struct MCPDiscoveryView: View {
             }
         }.scrollContentBackground(.hidden).background(Palette.paper)
             .navigationTitle("发现 MCP").navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $query, prompt: "搜索名称或用途，如 search、docs")
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索名称或用途，如 search、docs")
             .task(id: query) { pageTask?.cancel(); await discovery.search(query) }
             .onDisappear { pageTask?.cancel() }
     }

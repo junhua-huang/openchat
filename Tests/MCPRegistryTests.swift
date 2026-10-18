@@ -60,6 +60,7 @@ final class MCPRegistryTests: XCTestCase {
         })
         _ = try await client.search("搜索 & 文档🙂", cursor: "a+b/c?🙂")
         XCTAssertEqual(MCPRegistryClient.searchTerm("开发文档"), "docs")
+        XCTAssertEqual(MCPRegistryClient.searchTerm("天气"), "weather")
     }
     @MainActor func testLateSearchResultCannotOverwriteNewQuery() async throws {
         var release: CheckedContinuation<Void, Never>?

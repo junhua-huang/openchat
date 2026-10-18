@@ -33,7 +33,8 @@ struct MCPRegistryClient {
     ]
     static func searchTerm(_ query: String) -> String {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        return ["搜索": "search", "文档": "docs", "开发文档": "docs", "代码仓库": "github", "网页": "fetch", "数据库": "database"][query] ?? query
+        return ["搜索": "search", "联网搜索": "search", "文档": "docs", "开发文档": "docs", "代码仓库": "github",
+                "网页": "fetch", "数据库": "database", "天气": "weather", "新闻": "news", "地图": "maps", "知识库": "knowledge"][query] ?? query
     }
     func search(_ query: String, cursor: String? = nil) async throws -> MCPRegistryPage {
         let term = Self.searchTerm(query)

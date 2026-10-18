@@ -4,6 +4,7 @@ import hashlib
 from pathlib import Path
 import plistlib
 import json
+import os
 
 ROOT = Path(__file__).resolve().parents[1]
 objects = {}
@@ -72,6 +73,16 @@ app_settings = dict(common, PRODUCT_BUNDLE_IDENTIFIER="com.example.LiaoChat", PR
                     INFOPLIST_FILE="App/Info.plist", GENERATE_INFOPLIST_FILE="NO", MARKETING_VERSION="2.2.2",
                     CURRENT_PROJECT_VERSION="1", OTHER_LDFLAGS="$(inherited) -lz", ASSETCATALOG_COMPILER_APPICON_NAME="AppIcon",
                     LD_RUNPATH_SEARCH_PATHS="$(inherited) @executable_path/Frameworks")
+# Apply distribution signing only to the app, not Swift package resource bundles.
+if os.environ.get("OPENCHAT_DISTRIBUTION_SIGNING") == "1":
+    required = ["APP_BUNDLE_ID", "APPLE_TEAM_ID", "PROFILE_UUID", "OPENCHAT_BUILD_NUMBER"]
+    if any(not os.environ.get(name) for name in required):
+        raise SystemExit("Missing application distribution signing configuration")
+    app_settings.update(PRODUCT_BUNDLE_IDENTIFIER=os.environ["APP_BUNDLE_ID"],
+                        DEVELOPMENT_TEAM=os.environ["APPLE_TEAM_ID"], CODE_SIGN_STYLE="Manual",
+                        CODE_SIGN_IDENTITY="Apple Distribution",
+                        PROVISIONING_PROFILE_SPECIFIER=os.environ["PROFILE_UUID"],
+                        CURRENT_PROJECT_VERSION=os.environ["OPENCHAT_BUILD_NUMBER"])
 test_settings = dict(common, PRODUCT_BUNDLE_IDENTIFIER="com.example.LiaoChatTests", PRODUCT_NAME="$(TARGET_NAME)",
                      GENERATE_INFOPLIST_FILE="YES", TEST_HOST="$(BUILT_PRODUCTS_DIR)/LiaoChat.app/LiaoChat", BUNDLE_LOADER="$(TEST_HOST)",
                      LD_RUNPATH_SEARCH_PATHS="$(inherited) @executable_path/Frameworks @loader_path/Frameworks")

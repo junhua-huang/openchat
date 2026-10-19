@@ -156,3 +156,8 @@ Release、Debug 测试及截图以对应提交 CI 为准。`Scripts/check_mcp.py
 ## 1.0 原生界面验证
 
 Debug 专用合成夹具由 simulator 工作流启动并截取原生浅色、深色与空对话界面。夹具代码不进入 Release，不发起真实推理请求；截图仅用于内部 QA，以该提交的 native-ui-checks 产物为准。
+# Apple 登录接入（2026-10-19）
+
+欢迎页与账户设置新增 Apple 原生登录，身份独立于 ChatGPT/API 授权，只存本机 Keychain。检查请求 state/nonce、JWT 签名及 claims、当前 user ID、单次回调和异步结果失效；系统撤销、前台状态检查、取消、临时网络失败与存储失败均有处理。详见 [Apple 登录接入说明](APPLE-SIGN-IN.md)。
+
+新增 macOS 主机合成回归脚本，不创建系统授权请求、不写真实 Keychain、不连接 Apple 登录服务。iOS archive 与回归测试代码只编译，不运行 App、模拟器或物理 iOS 设备。签名描述文件的能力单独检查；正式发布脚本遇到缺失 Apple entitlement 会停止并说明修复步骤。最终通过项以对应提交的 CI 为准；原生授权交互和签名发布尚未由本次代码检查验证。

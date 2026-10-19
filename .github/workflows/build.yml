@@ -22,6 +22,17 @@ jobs:
             Scripts/check_portable_core.swift \
             -o "$RUNNER_TEMP/check-portable-core"
           "$RUNNER_TEMP/check-portable-core"
+      - name: Check Apple sign-in logic on the macOS host
+        run: |
+          swiftc Core/Support.swift Core/IdentityVerifier.swift Core/AppleAccount.swift \
+            Core/AppleAccountStore.swift Core/AppleSignInManager.swift Scripts/check_apple_sign_in.swift \
+            -o "$RUNNER_TEMP/check-apple-sign-in"
+          "$RUNNER_TEMP/check-apple-sign-in"
+      - name: Check distribution profile for Sign in with Apple
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+        env:
+          BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
+        run: python3 Scripts/check_apple_profile.py
       - name: Generate project
         run: python3 Scripts/generate_project.py
       - name: Archive Release for iOS
@@ -38,7 +49,7 @@ jobs:
           path: build/ReleaseCheck.xcresult
           if-no-files-found: ignore
           retention-days: 7
-      - name: Compile regression tests for physical iOS devices (no simulator)
+      - name: Compile iOS regression tests without launching the app
         run: |
           xcodebuild build-for-testing -project LiaoChat.xcodeproj -scheme LiaoChat -configuration Debug \
             -destination 'generic/platform=iOS' -derivedDataPath build/DeviceTests CODE_SIGNING_ALLOWED=NO

@@ -55,6 +55,7 @@ struct SafariBrowser: UIViewControllerRepresentable {
 struct WelcomeView: View {
     @EnvironmentObject private var auth: AuthManager
     @EnvironmentObject private var apiConnections: APIConnections
+    @EnvironmentObject private var appleSignIn: AppleSignInManager
     @State private var showAPISettings = false
     @ScaledMetric(relativeTo: .largeTitle) private var titleSize: CGFloat = 38
     var body: some View {
@@ -85,6 +86,11 @@ struct WelcomeView: View {
                     }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
                         .background(Palette.card.opacity(0.65), in: RoundedRectangle(cornerRadius: 28))
                     VStack(spacing: 14) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            AppleAccountPanel(disabled: auth.isBusy)
+                            Text("Apple 登录用于确认你的身份。开始聊天还需连接 ChatGPT 或 AI API。")
+                                .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        }.padding(.bottom, 8)
                         Button { TouchFeedback.tap(); Task { await auth.connect() } } label: {
                             HStack(spacing: 10) {
                                 if auth.isBusy { ProgressView().tint(Palette.onAction) }
@@ -92,15 +98,15 @@ struct WelcomeView: View {
                                 if !auth.isBusy { Image(systemName: "arrow.up.right").font(.subheadline.weight(.semibold)) }
                             }.frame(maxWidth: .infinity).padding(.vertical, 20)
                                 .background(Palette.action, in: Capsule()).foregroundStyle(Palette.onAction)
-                        }.disabled(auth.isBusy || !auth.isReady)
-                            .opacity(auth.isBusy || !auth.isReady ? 0.65 : 1)
+                        }.disabled(auth.isBusy || !auth.isReady || appleSignIn.isBusy)
+                            .opacity(auth.isBusy || !auth.isReady || appleSignIn.isBusy ? 0.65 : 1)
                         Text(auth.isBusy ? auth.stage : "身份与套餐使用分别授权 · 不读取已有聊天记录")
                             .font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center)
                         Button { showAPISettings = true } label: {
                             Label("使用其他 AI API", systemImage: "server.rack")
                                 .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity).padding(18)
                                 .liquidSurface(radius: 27, interactive: true)
-                        }.buttonStyle(.plain).disabled(auth.isBusy)
+                        }.buttonStyle(.plain).disabled(auth.isBusy || appleSignIn.isBusy)
                     }
                     if !auth.accounts.isEmpty {
                         VStack(alignment: .leading, spacing: 16) {
@@ -119,7 +125,7 @@ struct WelcomeView: View {
                                         Spacer()
                                         Image(systemName: "arrow.right").font(.caption)
                                     }.foregroundStyle(.primary)
-                                }.disabled(auth.isBusy)
+                                }.disabled(auth.isBusy || appleSignIn.isBusy)
                             }
                         }.padding(22).liquidSurface(radius: 26)
                     }

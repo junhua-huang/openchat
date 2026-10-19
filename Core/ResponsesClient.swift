@@ -1,13 +1,5 @@
 import Foundation
 
-struct ModelChoice: Codable, Identifiable {
-    let slug: String
-    let display_name: String
-    let visibility: String?
-    var reasoningEfforts: [String]? = nil
-    var id: String { slug }
-}
-
 enum ResponsesClient {
     static func models(token: String) async throws -> [ModelChoice] {
         var request = URLRequest(url: URL(string: "https://api.openai.com/v1/models")!)

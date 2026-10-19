@@ -21,22 +21,22 @@ struct AttachmentCard: View {
                     } else { Image(systemName: file.isImage ? "photo" : "doc.text").font(.title3).frame(width: 24) }
                     VStack(alignment: .leading, spacing: 4) {
                         Text(file.name).font(.subheadline.weight(.medium)).lineLimit(1)
-                        Text(ByteCountFormatter.string(fromByteCount: Int64(file.byteCount), countStyle: .file))
+                        Text(url == nil ? "附件暂不可用" : ByteCountFormatter.string(fromByteCount: Int64(file.byteCount), countStyle: .file))
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 0)
-                }.foregroundStyle(.primary)
+                }.foregroundStyle(.primary).contentShape(Rectangle()).frame(minHeight: 48)
             }.buttonStyle(.plain).disabled(url == nil).accessibilityLabel("预览附件：" + file.name)
             if let remove = remove {
-                Button(action: remove) { Image(systemName: "xmark.circle.fill").frame(width: 32, height: 36) }
+                Button(action: remove) { Image(systemName: "xmark.circle.fill").frame(width: 44, height: 44) }
                     .buttonStyle(.plain).foregroundStyle(.secondary).accessibilityLabel("移除附件：" + file.name)
             } else if let url = url {
-                ShareLink(item: url) { Image(systemName: "square.and.arrow.up").frame(width: 32, height: 36) }
+                ShareLink(item: url) { Image(systemName: "square.and.arrow.up").frame(width: 44, height: 44) }
                     .buttonStyle(.plain).accessibilityLabel("分享或保存文件：" + file.name)
             }
         }.padding(12).background(Palette.card, in: RoundedRectangle(cornerRadius: 16))
             .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.secondary.opacity(0.15)))
-            .sheet(item: $preview) { item in NativeFilePreview(url: item.url).ignoresSafeArea() }
+            .sheet(item: $preview) { item in FilePreviewSheet(url: item.url) }
             .task(id: file.id) {
                 guard file.isImage, let url = url, url.isFileURL else { return }
                 let image = await Task.detached(priority: .utility) { () -> CGImage? in
@@ -46,6 +46,23 @@ struct AttachmentCard: View {
                 }.value
                 if !Task.isCancelled, let image = image { thumbnail = UIImage(cgImage: image) }
             }
+    }
+}
+
+struct FilePreviewSheet: View {
+    let url: URL
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        NavigationStack {
+            NativeFilePreview(url: url).ignoresSafeArea(edges: .bottom)
+                .navigationTitle(url.lastPathComponent).navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("完成") { dismiss() } }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        ShareLink(item: url) { Image(systemName: "square.and.arrow.up") }.accessibilityLabel("分享或保存文件")
+                    }
+                }
+        }
     }
 }
 
@@ -66,23 +83,11 @@ struct NativeFilePreview: UIViewControllerRepresentable {
 
 struct ToolActivityRow: View {
     let activity: ToolActivity
-    private var title: String {
-        switch activity.name {
-        case "calculate": return "计算"
-        case "create_file": return "生成文件"
-        case "zip_files": return "打包文件"
-        case "read_file": return "读取附件"
-        case "read_webpage": return "读取网页"
-        case "web_search_call", "search_web": return "联网搜索"
-        case "code_interpreter_call": return "Python 分析"
-        case "image_generation_call": return "生成图片"
-        default: return activity.name
-        }
-    }
+    private var title: String { ToolPresentation.title(activity.name) }
     var body: some View {
         HStack(alignment: .top, spacing: 9) {
             if activity.state == "running" { ProgressView().controlSize(.mini) }
-            else { Image(systemName: activity.state == "complete" ? "checkmark.circle" : "exclamationmark.circle") }
+            else { Image(systemName: activity.state == "complete" ? "checkmark.circle" : activity.state == "cancelled" ? "pause.circle" : "exclamationmark.circle") }
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.caption.weight(.medium))
                 if !activity.detail.isEmpty { Text(activity.detail).font(.caption2).lineLimit(3) }

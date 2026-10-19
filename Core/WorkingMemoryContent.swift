@@ -1,5 +1,12 @@
 import Foundation
 
+// Editable text is stored separately from the memory sent to model services.
+struct WorkingMemoryDraft: Codable, Equatable {
+    let text: String
+    let baseText: String
+    let baseRevision: Int
+}
+
 struct WorkingMemoryContent: Codable, Equatable {
     var text = ""
     var enabled = true

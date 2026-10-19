@@ -31,6 +31,8 @@ team, bundle = os.environ['APPLE_TEAM_ID'], os.environ['APP_BUNDLE_ID']
 if not re.fullmatch(r'[A-Za-z0-9.-]+', bundle) or bundle == 'com.example.LiaoChat': raise SystemExit('Set your real APP_BUNDLE_ID')
 if team not in profile['TeamIdentifier']: raise SystemExit('Profile team does not match APPLE_TEAM_ID')
 if profile['Entitlements']['application-identifier'] != team + '.' + bundle: raise SystemExit('Profile App ID does not match the bundle ID')
+if 'Default' not in profile['Entitlements'].get('com.apple.developer.applesignin', []):
+    raise SystemExit('Enable Sign in with Apple for the App ID, regenerate its App Store Connect distribution profile, and update BUILD_PROVISION_PROFILE_BASE64')
 if profile.get('ProvisionedDevices') or profile.get('ProvisionsAllDevices') or profile['Entitlements'].get('get-task-allow'): raise SystemExit('Use an App Store Connect distribution profile')
 if profile['ExpirationDate'] <= datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None): raise SystemExit('Provisioning profile expired')
 uuid = profile['UUID']

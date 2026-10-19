@@ -3,6 +3,7 @@ import SwiftUI
 struct AccountView: View {
     @EnvironmentObject private var auth: AuthManager
     @EnvironmentObject private var apiConnections: APIConnections
+    @EnvironmentObject private var appleSignIn: AppleSignInManager
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var store: ChatStore
     let onConnect: (UUID?) -> Void
@@ -17,6 +18,11 @@ struct AccountView: View {
             ZStack {
                 AmbientBackground()
                 Form {
+                    Section {
+                        AppleAccountPanel(disabled: auth.isBusy)
+                    } header: { Text("Apple 登录") } footer: {
+                        Text("Apple 登录用于确认你的身份。聊天记录和工作记忆保存在本机，使用模型仍需连接 ChatGPT 或 AI API。")
+                    }.listRowBackground(Palette.card.opacity(0.78))
                     Section("AI 服务") {
                         NavigationLink { WorkingMemoryView(memory: store.workingMemory) } label: {
                             Label("共享工作记忆", systemImage: "brain")
@@ -24,7 +30,7 @@ struct AccountView: View {
                         Button { showingTools = true } label: { Label("工具与 MCP", systemImage: "wrench.and.screwdriver") }
                         NavigationLink { APISettingsView() } label: {
                             Label("API 连接与服务商", systemImage: "server.rack")
-                        }
+                        }.disabled(store.hasActiveWork)
                         if let connection = store.apiConnection {
                             LabeledContent("正在使用", value: connection.name)
                             Text(connection.host).font(.caption).foregroundStyle(.secondary)
@@ -46,7 +52,7 @@ struct AccountView: View {
                             }
                             if let account = auth.activeAccount {
                                 Button { onConnect(account.id) } label: { Label("重新连接当前账户", systemImage: "arrow.triangle.2.circlepath") }
-                                    .disabled(auth.isBusy)
+                                    .disabled(auth.isBusy || store.hasActiveWork || appleSignIn.isBusy)
                             }
                         }.listRowBackground(Palette.card.opacity(0.78))
                     }
@@ -70,9 +76,9 @@ struct AccountView: View {
                                     Spacer()
                                     if !store.isAPIConnection, auth.activeID == account.id { Image(systemName: "checkmark").foregroundStyle(Palette.accent) }
                                 }
-                            }.disabled(auth.isBusy)
+                            }.disabled(auth.isBusy || store.hasActiveWork || appleSignIn.isBusy)
                         }
-                        Button { onConnect(nil) } label: { Label("添加 ChatGPT 连接", systemImage: "plus.circle") }.disabled(auth.isBusy)
+                        Button { onConnect(nil) } label: { Label("添加 ChatGPT 连接", systemImage: "plus.circle") }.disabled(auth.isBusy || store.hasActiveWork || appleSignIn.isBusy)
                     }.listRowBackground(Palette.card.opacity(0.78))
                     Section {
                         LabeledContent("本机对话", value: "\(store.threads.filter { !$0.messages.isEmpty }.count) 段")

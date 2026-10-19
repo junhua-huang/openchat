@@ -58,6 +58,7 @@ ui_sources = [file(p.relative_to(ROOT).as_posix(), "sourcecode.swift") for p in 
 asset = file("App/Assets.xcassets", "folder.assetcatalog")
 privacy = file("App/PrivacyInfo.xcprivacy", "text.xml")
 info = file("App/Info.plist", "text.plist.xml")
+entitlements = file("App/OpenChat.entitlements", "text.plist.entitlements")
 fixtures = file("Tests/Fixtures.json", "text.json")
 app_product = add("app-product", "PBXFileReference", explicitFileType="wrapper.application", includeInIndex=0, path="LiaoChat.app", sourceTree="BUILT_PRODUCTS_DIR")
 test_product = add("test-product", "PBXFileReference", explicitFileType="wrapper.cfbundle", includeInIndex=0, path="LiaoChatTests.xctest", sourceTree="BUILT_PRODUCTS_DIR")
@@ -65,13 +66,14 @@ ui_product = add("ui-product", "PBXFileReference", explicitFileType="wrapper.cfb
 ui_group = add("ui-group", "PBXGroup", children=ui_sources, name="UITests", sourceTree="<group>")
 products = add("products", "PBXGroup", children=[app_product, test_product, ui_product], name="Products", sourceTree="<group>")
 tests = add("tests-group", "PBXGroup", children=test_sources + [fixtures], name="Tests", sourceTree="<group>")
-main = add("main-group", "PBXGroup", children=app_sources + [asset, privacy, info, tests, ui_group, products], sourceTree="<group>")
+main = add("main-group", "PBXGroup", children=app_sources + [asset, privacy, info, entitlements, tests, ui_group, products], sourceTree="<group>")
 common = {"IPHONEOS_DEPLOYMENT_TARGET": "17.0", "SWIFT_VERSION": "5.0", "SDKROOT": "iphoneos", "CLANG_ENABLE_MODULES": "YES",
           "TARGETED_DEVICE_FAMILY": "1,2", "CODE_SIGN_STYLE": "Automatic", "DEVELOPMENT_TEAM": "",
           "SUPPORTED_PLATFORMS": "iphoneos iphonesimulator", "SUPPORTS_MACCATALYST": "NO"}
 app_settings = dict(common, PRODUCT_BUNDLE_IDENTIFIER="com.example.LiaoChat", PRODUCT_NAME="$(TARGET_NAME)",
                     INFOPLIST_FILE="App/Info.plist", GENERATE_INFOPLIST_FILE="NO", MARKETING_VERSION="2.2.2",
-                    CURRENT_PROJECT_VERSION="1", OTHER_LDFLAGS="$(inherited) -lz", ASSETCATALOG_COMPILER_APPICON_NAME="AppIcon",
+                    CURRENT_PROJECT_VERSION="1", CODE_SIGN_ENTITLEMENTS="App/OpenChat.entitlements",
+                    OTHER_LDFLAGS="$(inherited) -lz", ASSETCATALOG_COMPILER_APPICON_NAME="AppIcon",
                     LD_RUNPATH_SEARCH_PATHS="$(inherited) @executable_path/Frameworks")
 # Apply distribution signing only to the app, not Swift package resource bundles.
 if os.environ.get("OPENCHAT_DISTRIBUTION_SIGNING") == "1":
@@ -106,7 +108,7 @@ ui_settings = dict(common, PRODUCT_BUNDLE_IDENTIFIER="com.example.LiaoChatUITest
 ui_test = add("ui-target", "PBXNativeTarget", buildConfigurationList=configs("ui", ui_settings),
               buildPhases=[phase("ui-sources", "PBXSourcesBuildPhase", ui_sources), phase("ui-frameworks", "PBXFrameworksBuildPhase", []), phase("ui-resources", "PBXResourcesBuildPhase", [])],
               buildRules=[], dependencies=[dependency], name="LiaoChatUITests", productName="LiaoChatUITests", productReference=ui_product, productType="com.apple.product-type.bundle.ui-testing")
-project = add("project", "PBXProject", attributes={"LastUpgradeCheck": "1600", "TargetAttributes": {app: {"CreatedOnToolsVersion": "16.0"}, test: {"CreatedOnToolsVersion": "16.0", "TestTargetID": app}, ui_test: {"CreatedOnToolsVersion": "16.0", "TestTargetID": app}}},
+project = add("project", "PBXProject", attributes={"LastUpgradeCheck": "1600", "TargetAttributes": {app: {"CreatedOnToolsVersion": "16.0", "SystemCapabilities": {"com.apple.SignInWithApple": {"enabled": 1}}}, test: {"CreatedOnToolsVersion": "16.0", "TestTargetID": app}, ui_test: {"CreatedOnToolsVersion": "16.0", "TestTargetID": app}}},
               buildConfigurationList=configs("project", {}), compatibilityVersion="Xcode 14.0", developmentRegion="zh-Hans",
               hasScannedForEncodings=0, knownRegions=["zh-Hans", "en", "Base"], mainGroup=main, productRefGroup=products, projectDirPath="", projectRoot="", targets=[app, test, ui_test], packageReferences=[math_package])
 path = ROOT / "LiaoChat.xcodeproj"

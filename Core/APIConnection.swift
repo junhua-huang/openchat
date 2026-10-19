@@ -110,10 +110,15 @@ final class APIConnections: ObservableObject {
     func save(_ connection: APIConnection) throws {
         var value = try connection.validated()
         value.revision = UUID()
+        let previous = connections.first { $0.id == value.id }
         var next = connections
         if let i = next.firstIndex(where: { $0.id == value.id }) { next[i] = value }
         else { next.append(value) }
         try persist(next, active: activeID)
+        if let previous = previous,
+           previous.baseURL != value.baseURL || previous.apiKey != value.apiKey || previous.protocolStyle != value.protocolStyle {
+            ModelCatalogCache.shared.invalidate(value.id)
+        }
     }
 
     func select(_ id: UUID?) throws {
@@ -126,6 +131,7 @@ final class APIConnections: ObservableObject {
 
     func delete(_ id: UUID) throws {
         try persist(connections.filter { $0.id != id }, active: activeID == id ? nil : activeID)
+        ModelCatalogCache.shared.invalidate(id)
     }
 
     private func persist(_ next: [APIConnection], active: UUID?) throws {

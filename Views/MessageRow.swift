@@ -5,6 +5,8 @@ struct MessageRow: View, Equatable {
     let message: ChatMessage
     var fileVault: FileVault? = nil
     let canRetry: Bool
+    var waitingForApproval = false
+    var waitingForForeground = false
     let retry: () -> Void
     let edit: () -> Void
     let chooseVersion: (Int) -> Void
@@ -13,7 +15,14 @@ struct MessageRow: View, Equatable {
     @State private var linkedFile: AttachmentPreview?
     @State private var missingFile = false
     @State private var showingTools = false
-    static func == (lhs: MessageRow, rhs: MessageRow) -> Bool { lhs.message == rhs.message && lhs.canRetry == rhs.canRetry && lhs.fileVault?.directory == rhs.fileVault?.directory }
+    static func == (lhs: MessageRow, rhs: MessageRow) -> Bool {
+        lhs.message == rhs.message && lhs.canRetry == rhs.canRetry && lhs.fileVault?.directory == rhs.fileVault?.directory &&
+        lhs.waitingForApproval == rhs.waitingForApproval && lhs.waitingForForeground == rhs.waitingForForeground
+    }
+    private var progress: ReplyProgress {
+        ReplyProgress.current(approval: waitingForApproval, paused: waitingForForeground,
+            runningTool: message.toolActivities?.last(where: { $0.state == "running" })?.name, hasText: !message.text.isEmpty)
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -44,9 +53,11 @@ struct MessageRow: View, Equatable {
                 }
                 if message.status == .streaming {
                     HStack(spacing: 9) {
-                        ProgressView().controlSize(.small)
-                        if message.text.isEmpty { Text("正在回复…").font(.subheadline).foregroundStyle(.secondary) }
-                    }.padding(.vertical, 4).accessibilityLabel("正在回复")
+                        if progress == .approval { Image(systemName: "hand.raised") }
+                        else if progress == .paused { Image(systemName: "pause.circle") }
+                        else { ProgressView().controlSize(.small) }
+                        Text(progress.title).font(.subheadline).foregroundStyle(.secondary)
+                    }.padding(.vertical, 4).accessibilityLabel(progress.title)
                 }
                 if let problem = message.problem {
                     Label(problem, systemImage: message.status == .cancelled ? "pause.circle" : "exclamationmark.circle")
@@ -84,7 +95,7 @@ struct MessageRow: View, Equatable {
             } else { missingFile = true }
             return .handled
         })
-        .sheet(item: $linkedFile) { item in NativeFilePreview(url: item.url).ignoresSafeArea() }
+        .sheet(item: $linkedFile) { item in FilePreviewSheet(url: item.url) }
         .sheet(isPresented: $showingTools) {
             ToolRecordsView(activities: message.toolActivities ?? [])
         }
@@ -95,22 +106,22 @@ struct MessageRow: View, Equatable {
     private var actions: some View {
         HStack(spacing: 2) {
             if !message.text.isEmpty {
-                Button { copy() } label: { Image(systemName: copied ? "checkmark" : "doc.on.doc").frame(width: 36, height: 36) }
+                Button { copy() } label: { Image(systemName: copied ? "checkmark" : "doc.on.doc").frame(width: 44, height: 44) }
                     .accessibilityLabel(copied ? "已复制" : "复制回复")
-                ShareLink(item: message.text) { Image(systemName: "square.and.arrow.up").frame(width: 36, height: 36) }
+                ShareLink(item: message.text) { Image(systemName: "square.and.arrow.up").frame(width: 44, height: 44) }
                     .accessibilityLabel("分享回复")
             }
             if canRetry {
-                Button { TouchFeedback.tap(); retry() } label: { Image(systemName: "arrow.clockwise").frame(width: 36, height: 36) }
+                Button { TouchFeedback.tap(); retry() } label: { Image(systemName: "arrow.clockwise").frame(width: 44, height: 44) }
                     .accessibilityLabel("重新生成回复")
                 if message.versionCount > 1 {
                     HStack(spacing: 0) {
                         Button { chooseVersion(message.activeVersion - 1) } label: {
-                            Image(systemName: "chevron.left").frame(width: 32, height: 36)
+                            Image(systemName: "chevron.left").frame(width: 44, height: 44)
                         }.disabled(message.activeVersion == 0).accessibilityLabel("上一版回复")
                         Text("\(message.activeVersion + 1) / \(message.versionCount)").font(.caption.monospacedDigit())
                         Button { chooseVersion(message.activeVersion + 1) } label: {
-                            Image(systemName: "chevron.right").frame(width: 32, height: 36)
+                            Image(systemName: "chevron.right").frame(width: 44, height: 44)
                         }.disabled(message.activeVersion + 1 >= message.versionCount).accessibilityLabel("下一版回复")
                     }.padding(.leading, 4)
                 }

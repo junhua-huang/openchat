@@ -24,13 +24,16 @@ struct ModelPickerView: View {
     @State private var problems: [UUID: String] = [:]
     @State private var refreshing = false
     @State private var problem: String?
+    @State private var sourceFilter = 0
+    @State private var refreshTask: Task<Void, Never>?
     @AppStorage("modelPicker.favorites.v1") private var favoritesJSON = "[]"
     @AppStorage("modelPicker.recent.v1") private var recentJSON = "[]"
 
     private var sources: [ModelSource] {
-        auth.accounts.filter { $0.tokens?.permitsInference == true }.map {
+        let all = auth.accounts.filter { $0.tokens?.permitsInference == true }.map {
             ModelSource(id: $0.id, title: "ChatGPT · " + $0.label, api: nil)
         } + apiConnections.connections.map { ModelSource(id: $0.id, title: $0.name, api: $0) }
+        return all.filter { sourceFilter == 0 || (sourceFilter == 1 ? $0.api == nil : $0.api != nil) }
     }
     private var choices: [ConnectedModel] {
         sources.flatMap { source in
@@ -62,6 +65,17 @@ struct ModelPickerView: View {
         NavigationStack {
             List {
                 effortSection
+                Section {
+                    Picker("模型来源", selection: $sourceFilter) {
+                        Text("全部").tag(0); Text("ChatGPT").tag(1); Text("API").tag(2)
+                    }.pickerStyle(.segmented)
+                }.listRowBackground(Color.clear)
+                if store.hasActiveWork && !store.isSending {
+                    Section {
+                        Label("其他对话仍在生成或导入附件。完成后可切换连接，避免中断。", systemImage: "bubble.left.and.text.bubble.right")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
                 let starred = choices.filter { favorites.contains($0.id) }
                 if !starred.isEmpty {
                     Section("收藏") { ForEach(starred) { row($0) } }.listRowBackground(Palette.card.opacity(0.75))
@@ -89,27 +103,34 @@ struct ModelPickerView: View {
                     Section { Text("没有找到匹配的模型或连接。").foregroundStyle(.secondary) }
                 }
                 Section {
-                    Button { Task { await refresh(includeAPI: true) } } label: {
+                    Button {
+                        refreshTask?.cancel()
+                        refreshTask = Task { await refresh(includeAPI: true) }
+                    } label: {
                         HStack {
-                            Label("刷新所有连接的模型", systemImage: "arrow.clockwise")
+                            Label("刷新模型列表", systemImage: "arrow.clockwise")
                             Spacer()
                             if refreshing { ProgressView() }
                         }
                     }.disabled(refreshing || store.isSending)
                     NavigationLink { APISettingsView() } label: { Label("管理 API 连接", systemImage: "server.rack") }
+                        .disabled(store.hasActiveWork)
                     NavigationLink { WorkingMemoryView(memory: store.workingMemory) } label: { Label("共享工作记忆", systemImage: "brain") }
                 } footer: {
                     Text("模型名称相同时，按连接区分。切换连接后显示该连接的本机对话；共享工作记忆会随下次请求发送给所选模型。")
                 }.listRowBackground(Palette.card.opacity(0.75))
-            }.scrollContentBackground(.hidden).background(AmbientBackground())
+            }.scrollContentBackground(.hidden).scrollDismissesKeyboard(.immediately).background(AmbientBackground())
                 .searchable(text: $query, prompt: "搜索所有连接与模型")
                 .refreshable { await refresh(includeAPI: true) }
                 .navigationTitle("模型与思考强度").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完成") { dismiss() } } }
                 .task {
+                    for source in sources { catalogs[source.id] = store.modelCatalogCache.models(for: source.id) }
                     catalogs[store.connectionID] = store.models
                     await refresh(includeAPI: false)
                 }
+                .onChange(of: store.models) { _, models in catalogs[store.connectionID] = models }
+                .onDisappear { refreshTask?.cancel(); refreshTask = nil }
                 .alert("切换模型", isPresented: Binding(get: { problem != nil }, set: { if !$0 { problem = nil } })) {
                     Button("知道了", role: .cancel) { problem = nil }
                 } message: { Text(problem ?? "") }
@@ -128,9 +149,10 @@ struct ModelPickerView: View {
             if let connection = store.apiConnection {
                 NavigationLink { APIConnectionEditor(connection: connection) } label: {
                     Label("配置此 API 的模型思考档位", systemImage: "slider.horizontal.3")
-                }.disabled(store.isSending)
+                }.disabled(store.hasActiveWork)
             }
         } header: { Text("当前模型") } footer: {
+            if let notice = store.modelCatalogNotice { Text(notice) }
             Text(store.effortOptions.isEmpty ? "服务商未提供可识别的强度档位。API 可按模型手动设置，默认不发送强度参数。"
                  : "强度按当前对话与模型保存，默认由服务商决定。更高强度通常需要更多时间和用量。")
         }.listRowBackground(Palette.card.opacity(0.75))
@@ -148,7 +170,7 @@ struct ModelPickerView: View {
                     Spacer(minLength: 4)
                     if isSelected(choice) { Image(systemName: "checkmark.circle.fill").foregroundStyle(Palette.accent) }
                 }.padding(.vertical, 8).contentShape(Rectangle())
-            }.buttonStyle(.plain).disabled(store.isSending)
+            }.buttonStyle(.plain).disabled(!canSelect(choice))
                 .accessibilityValue(isSelected(choice) ? "已选择" : "")
             Button {
                 var values = favorites
@@ -162,7 +184,7 @@ struct ModelPickerView: View {
     }
 
     private func select(_ choice: ConnectedModel) {
-        guard !store.isSending else { return }
+        guard canSelect(choice) else { return }
         do {
             if choice.connectionID == store.connectionID {
                 onSelect(choice.model.slug)
@@ -195,11 +217,17 @@ struct ModelPickerView: View {
                     guard auth.activeID == choice.connectionID else { throw AppFailure.message("ChatGPT 连接未能切换，请检查账户授权。") }
                     try apiConnections.select(nil)
                 }
-                dismiss()
             }
             recentJSON = json([choice.id] + keys(recentJSON).filter { $0 != choice.id }.prefix(11))
-            TouchFeedback.tap()
+            TouchFeedback.tap(); dismiss()
         } catch { apiConnections.requestedModel = nil; problem = error.localizedDescription }
+    }
+
+    private func canSelect(_ choice: ConnectedModel) -> Bool {
+        if store.isSending { return false }
+        let replacesWorkspace = choice.connectionID != store.connectionID ||
+            (choice.api != nil && choice.api?.modelIDs.contains(choice.model.slug) != true)
+        return !replacesWorkspace || !store.hasActiveWork
     }
 
     private func refresh(includeAPI: Bool) async {
@@ -207,15 +235,17 @@ struct ModelPickerView: View {
         refreshing = true
         defer { refreshing = false }
         for source in sources {
+            if Task.isCancelled { return }
             if source.id == store.connectionID {
                 if includeAPI {
                     await store.loadModels(refresh: true)
-                    problems[source.id] = store.errorText
+                    problems[source.id] = store.modelCatalogNotice ?? (store.models.isEmpty ? store.errorText : nil)
                 }
                 catalogs[source.id] = store.models
                 continue
             }
             if source.api != nil && !includeAPI { continue }
+            if !includeAPI, !(catalogs[source.id] ?? []).isEmpty { continue }
             do {
                 let models: [ModelChoice]
                 if let connection = source.api { models = try await APIChatClient.models(connection: connection) }
@@ -225,6 +255,7 @@ struct ModelPickerView: View {
                 }
                 try Task.checkCancellation()
                 catalogs[source.id] = models; problems[source.id] = nil
+                store.modelCatalogCache.save(models, for: source.id)
             } catch is CancellationError { return }
             catch { problems[source.id] = error.localizedDescription }
         }

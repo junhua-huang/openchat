@@ -180,7 +180,11 @@ final class AppleSignInManager: NSObject, ObservableObject {
             token_endpoint: URL(string: "https://appleid.apple.com/auth/token")!,
             jwks_uri: URL(string: "https://appleid.apple.com/auth/keys")!, revocation_endpoint: nil)
         do {
-            return try await IdentityVerifier.verify(token, clientID: bundleID, nonce: nonce, metadata: metadata)
+            var request = URLRequest(url: metadata.jwks_uri)
+            request.timeoutInterval = 15
+            let (keys, response) = try await HTTP.session.data(for: request)
+            try HTTP.check(response)
+            return try IdentityVerifier.verify(token, clientID: bundleID, nonce: nonce, metadata: metadata, jwks: keys)
         } catch {
             throw AppFailure.message("无法验证 Apple 登录，请检查网络后重试。")
         }

@@ -115,6 +115,12 @@ import Security
         await task.value
         check(delayed.account == nil && writes == 1, "Late verification must not undo sign-out")
 
+        let abort = try delayed.beginSignIn()
+        delayed.cancelCurrentSignIn()
+        check(!delayed.isBusy && delayed.account == nil, "In-app cancel must release the active operation")
+        await delayed.complete(success, attemptID: abort.id)
+        check(writes == 1, "Cancellation must reject a later completion")
+
         var resumeState: CheckedContinuation<ASAuthorizationAppleIDProvider.CredentialState, Never>?
         let stale = AppleSignInManager(load: { original }, save: { _ in }, remove: {},
             credentialState: { _ in await withCheckedContinuation { resumeState = $0 } }, verify: { _, _ in identity() })
@@ -154,6 +160,17 @@ import Security
         let parts = signed.split(separator: ".").map(String.init)
         let tampered = parts[0] + "." + EncodingTools.base64URL(Data("{}".utf8)) + "." + parts[2]
         rejects("Reject tampered token") { _ = try IdentityVerifier.verify(tampered, clientID: "synthetic.app", nonce: "expected", metadata: metadata, jwks: jwks) }
+
+        let fixture = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: "Tests/Fixtures.json"))) as! [String: Any]
+        let rsaKeys = try JSONSerialization.data(withJSONObject: fixture["jwks"]!)
+        let rsa = fixture["rsa"] as! String
+        let otherIssuer = OpenIDMetadata(issuer: "https://auth.openai.com", authorization_endpoint: URL(string: "https://auth.openai.com/authorize")!,
+            token_endpoint: URL(string: "https://auth.openai.com/token")!, jwks_uri: URL(string: "https://auth.openai.com/keys")!, revocation_endpoint: nil)
+        let rsaIdentity = try IdentityVerifier.verify(rsa, clientID: "test-client", nonce: "test-nonce", metadata: otherIssuer, jwks: rsaKeys)
+        check(rsaIdentity.sub == "test-user", "Exercise the production RSA signature path as used by Apple's keys")
+        rejects("Valid signatures from another issuer cannot become Apple credentials") {
+            _ = try IdentityVerifier.verify(rsa, clientID: "test-client", nonce: "test-nonce", metadata: metadata, jwks: rsaKeys)
+        }
         print("Passed \(count) Apple sign-in host checks (no app, device, simulator or network).")
     }
 }

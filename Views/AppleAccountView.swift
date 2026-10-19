@@ -60,13 +60,13 @@ struct AppleAccountPanel: View {
                 }.font(.subheadline)
             } else {
                 AppleSignInButton(manager: appleSignIn, disabled: disabled)
-                    .id(colorScheme).frame(height: 52)
+                    .id(colorScheme).frame(height: 62)
             }
             if appleSignIn.isBusy {
                 HStack(spacing: 8) {
                     ProgressView(); Text("正在完成 Apple 登录…").font(.caption)
                     Spacer()
-                    Button("取消") { appleSignIn.cancelCurrentSignIn() }.font(.subheadline)
+                    Button("取消") { appleSignIn.cancelCurrentSignIn() }.font(.subheadline).frame(minHeight: 44)
                 }
             }
             if let notice = appleSignIn.notice {

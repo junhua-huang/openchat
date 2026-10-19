@@ -1,3 +1,11 @@
+## 2026-10-19：Apple 登录接入
+
+欢迎页与账户设置新增 Apple 原生登录，身份独立于 ChatGPT/API 授权，只存本机 Keychain。检查请求 state/nonce、JWT 签名及 claims、当前 user ID、单次回调和异步结果失效；系统撤销、前台状态检查、取消、临时网络失败与存储失败均有处理。详见 [Apple 登录接入说明](APPLE-SIGN-IN.md)。
+
+新增 macOS 主机合成回归脚本，不创建系统授权请求、不写真实 Keychain、不连接 Apple 登录服务。iOS archive 与回归测试代码只编译，不运行 App、模拟器或物理 iOS 设备。签名描述文件的能力单独检查；正式发布脚本遇到缺失 Apple entitlement 会停止并说明修复步骤。最终通过项以对应提交的 CI 为准；原生授权交互和签名发布尚未由本次代码检查验证。
+
+云端已确认：当前仓库保存的分发描述文件缺少 `com.apple.developer.applesignin`，正式发布前必须为 App ID 开启能力、重新生成描述文件并更新 `BUILD_PROVISION_PROFILE_BASE64`。这不影响 unsigned 编译，但尚不能据此发布可用的 Apple 登录版本。目录探测脚本也补齐了 MCP 确认策略类型依赖，避免把探测程序的编译错误误当成外部目录不可用。
+
 ## 2026-10-19：常用交互与恢复体验
 
 新增按连接隔离的模型目录缓存，临时刷新失败时保留模型与当前选择；手动 API 模型和远端档位合并，修改服务地址、密钥或协议后清除旧目录。模型选择器增加来源筛选、恢复缓存、选后关闭和离开页面取消刷新。其他对话仍在生成或导入时，阻止会重建工作区的连接切换与配置修改。
@@ -156,8 +164,3 @@ Release、Debug 测试及截图以对应提交 CI 为准。`Scripts/check_mcp.py
 ## 1.0 原生界面验证
 
 Debug 专用合成夹具由 simulator 工作流启动并截取原生浅色、深色与空对话界面。夹具代码不进入 Release，不发起真实推理请求；截图仅用于内部 QA，以该提交的 native-ui-checks 产物为准。
-# Apple 登录接入（2026-10-19）
-
-欢迎页与账户设置新增 Apple 原生登录，身份独立于 ChatGPT/API 授权，只存本机 Keychain。检查请求 state/nonce、JWT 签名及 claims、当前 user ID、单次回调和异步结果失效；系统撤销、前台状态检查、取消、临时网络失败与存储失败均有处理。详见 [Apple 登录接入说明](APPLE-SIGN-IN.md)。
-
-新增 macOS 主机合成回归脚本，不创建系统授权请求、不写真实 Keychain、不连接 Apple 登录服务。iOS archive 与回归测试代码只编译，不运行 App、模拟器或物理 iOS 设备。签名描述文件的能力单独检查；正式发布脚本遇到缺失 Apple entitlement 会停止并说明修复步骤。最终通过项以对应提交的 CI 为准；原生授权交互和签名发布尚未由本次代码检查验证。
